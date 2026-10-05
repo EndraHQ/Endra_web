@@ -1,0 +1,43 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor & IDE files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+Thumbs.db
+
+# Environment variables
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+*.env
+
+# Local reference and audit artifacts (MUST NOT be committed)
+ENDRA - Web app (1).html
+ENDRA — Web app (1).html
+ENDRA - Web app with sign up and onboarding (4).html
+ENDRA — Web app with sign up and onboarding (4).html
+ENDRA Registration & Access Flow.pdf
+ENDRA-FRONTEND-UI-AUDIT.md
+*.pdf
