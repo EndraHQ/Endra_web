@@ -1,20 +1,23 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useApp } from '../../context/AppContext';
 import { Icon } from '../../components/icons/Icon';
 import { fmtPhone } from '../../utils/authHelpers';
+import { OB_STEPS } from '../../data/onboardingData';
 
 export const OtpView: React.FC = () => {
   const { signupData, verifyOtp, setAuthView } = useAuth();
+  const { toast } = useApp();
   const [digits, setDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [timer, setTimer] = useState(30);
+  const [resend, setResend] = useState(30);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
     inputRefs.current[0]?.focus();
     const interval = setInterval(() => {
-      setTimer(t => (t > 0 ? t - 1 : 0));
+      setResend(r => (r > 0 ? r - 1 : 0));
     }, 1000);
     return () => clearInterval(interval);
   }, []);
@@ -45,7 +48,22 @@ export const OtpView: React.FC = () => {
 
   const handleKeyDown = (idx: number, e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Backspace' && !digits[idx] && idx > 0) {
+      e.preventDefault();
+      const prevInput = inputRefs.current[idx - 1];
+      if (prevInput) {
+        setDigits(prev => {
+          const next = [...prev];
+          next[idx - 1] = '';
+          return next;
+        });
+        prevInput.focus();
+      }
+    } else if (e.key === 'ArrowLeft' && idx > 0) {
+      e.preventDefault();
       inputRefs.current[idx - 1]?.focus();
+    } else if (e.key === 'ArrowRight' && idx < 5) {
+      e.preventDefault();
+      inputRefs.current[idx + 1]?.focus();
     }
   };
 
@@ -64,11 +82,16 @@ export const OtpView: React.FC = () => {
     inputRefs.current[targetIdx]?.focus();
   };
 
+  const handleResendCode = () => {
+    setResend(30);
+    toast('A new code has been sent');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const code = digits.join('');
-    if (code.length < 6) {
-      setError('Enter the 6-digit code sent to your phone.');
+    if (!/^\d{6}$/.test(code)) {
+      setError('Enter all 6 digits of the code.');
       return;
     }
 
@@ -78,90 +101,92 @@ export const OtpView: React.FC = () => {
     setLoading(false);
 
     if (!ok) {
-      setError('Invalid code. Check the message and try again.');
+      setError('Invalid verification code.');
     }
   };
 
-  const formattedPhone = signupData ? fmtPhone(signupData.phone) : '+234 803 415 9920';
+  const formattedPhone = signupData?.phone ? fmtPhone(signupData.phone) : '+234 803 415 9920';
 
   return (
     <div>
+      {/* 10-step progress bar before setup rail */}
+      <div className="acprog" role="img" aria-label={`Step 2 of ${OB_STEPS.length}: Verify Phone`}>
+        <div className="segs">
+          {OB_STEPS.map((_, i) => (
+            <i key={i} className={i < 2 ? 'on' : ''} />
+          ))}
+        </div>
+        <div className="lab">
+          <span>Step 02 of {OB_STEPS.length}</span>
+          <span>{OB_STEPS[1].t}</span>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        className="linkb"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginBottom: '14px', fontSize: '13.5px' }}
+        onClick={() => setAuthView('signup')}
+      >
+        <Icon name="chevl" size={14} /> Edit details
+      </button>
+
       <h1 id="gH" tabIndex={-1}>
-        Confirm your phone number
+        Verify your phone number
       </h1>
       <p className="sub">
-        We sent a 6-digit code via SMS to <b>{formattedPhone}</b>.
+        Enter the 6-digit code we sent to <b>{formattedPhone}</b>.
       </p>
 
       <form onSubmit={handleSubmit} noValidate>
-        {error && (
-          <div className="g-banner" role="alert">
-            <Icon name="alert" size={16} />
-            <span>{error}</span>
-          </div>
-        )}
-
-        <div className={`otp ${error ? 'bad' : ''}`}>
-          {digits.map((digit, i) => (
+        <div className={`otp ${error ? 'bad' : ''}`} role="group" aria-label="6-digit code">
+          {digits.map((digit, idx) => (
             <input
-              key={i}
-              ref={el => (inputRefs.current[i] = el)}
-              type="text"
+              key={idx}
+              ref={el => (inputRefs.current[idx] = el)}
+              id={`gOtp${idx}`}
               inputMode="numeric"
               pattern="[0-9]*"
               maxLength={1}
+              autoComplete={idx === 0 ? 'one-time-code' : 'off'}
+              aria-label={`Digit ${idx + 1}`}
               value={digit}
-              onChange={e => handleChange(i, e.target.value)}
-              onKeyDown={e => handleKeyDown(i, e)}
+              onChange={e => handleChange(idx, e.target.value)}
+              onKeyDown={e => handleKeyDown(idx, e)}
               onPaste={handlePaste}
-              aria-label={`Digit ${i + 1}`}
             />
           ))}
         </div>
 
-        <p className="g-hint" style={{ textAlign: 'center', margin: '14px 0 20px' }}>
-          Didn’t get the code?{' '}
-          {timer > 0 ? (
-            <span>Resend code in {timer}s</span>
-          ) : (
-            <button
-              type="button"
-              className="linkb"
-              onClick={() => {
-                setTimer(30);
-                setDigits(['', '', '', '', '', '']);
-                inputRefs.current[0]?.focus();
-              }}
-            >
-              Resend code
-            </button>
-          )}
-        </p>
+        {error && (
+          <div className="g-err" id="eOtp" role="alert" style={{ marginBottom: '12px' }}>
+            <Icon name="alert" size={14} />
+            <span>{error}</span>
+          </div>
+        )}
 
-        <button
-          type="submit"
-          className="btn btn-w btn-lg btn-block"
-          disabled={loading || digits.join('').length < 6}
-        >
-          {loading ? (
-            <>
-              <span className="spinline" /> Verifying…
-            </>
-          ) : (
-            'Verify and continue'
-          )}
+        <div className="note" style={{ margin: '12px 0 20px' }}>
+          Preview only: no SMS is sent. Enter any 6 digits to continue.
+        </div>
+
+        <button className="btn btn-w btn-lg btn-block" type="submit" disabled={loading}>
+          {loading ? 'Creating your account…' : 'Verify and continue'}
         </button>
       </form>
 
-      <p className="auth-alt">
-        Wrong number?{' '}
-        <button
-          type="button"
-          className="linkb"
-          onClick={() => setAuthView('signup')}
-        >
-          Change number
-        </button>
+      <p className="auth-alt" id="resendTxt">
+        {resend > 0 ? (
+          <>
+            Resend code in <span className="mono">0:{String(resend).padStart(2, '0')}</span>
+          </>
+        ) : (
+          <>
+            Didn’t get it?{' '}
+            <button type="button" className="linkb" onClick={handleResendCode}>
+              Resend code
+            </button>
+          </>
+        )}
       </p>
     </div>
   );

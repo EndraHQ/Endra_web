@@ -4,9 +4,11 @@ import { useModals } from '../../context/ModalContext';
 import { Icon } from '../../components/icons/Icon';
 import { AddedCamera, MAX_CAMS } from '../../data/onboardingData';
 import { OnboardingActions } from './OnboardingActions';
+import { plural } from '../../utils/formatters';
 
 export const CamerasStep: React.FC = () => {
   const {
+    account,
     onboardingData,
     updateOnboardingData,
     markStepComplete,
@@ -54,6 +56,45 @@ export const CamerasStep: React.FC = () => {
   const [testOk, setTestOk] = useState(false);
 
   const cameras = onboardingData.cams || [];
+
+  const [installerChecking, setInstallerChecking] = useState<boolean>(() => {
+    return Boolean(account?.installer && !onboardingData.instChecked);
+  });
+
+  useEffect(() => {
+    if (installerChecking) {
+      const t = setTimeout(() => {
+        setInstallerChecking(false);
+        if (account?.installer) {
+          const instCams: AddedCamera[] = [
+            {
+              id: 'ENC-INST-01',
+              name: 'Front Gate Camera',
+              loc: 'Main gate',
+              zone: 'Gate',
+              method: 'installer',
+              via: 'Installer pairing',
+              by: account.installer.name
+            },
+            {
+              id: 'ENC-INST-02',
+              name: 'Backyard Camera',
+              loc: 'Perimeter',
+              zone: 'Perimeter',
+              method: 'installer',
+              via: 'Installer pairing',
+              by: account.installer.name
+            }
+          ];
+          updateOnboardingData({
+            cams: [...instCams, ...cameras],
+            instChecked: true
+          });
+        }
+      }, 1700);
+      return () => clearTimeout(t);
+    }
+  }, [installerChecking, account, cameras, updateOnboardingData]);
 
   useEffect(() => {
     if (activeMethod === 'auto') {
@@ -133,8 +174,44 @@ export const CamerasStep: React.FC = () => {
 
   const handleContinue = () => {
     markStepComplete('cameras', cameras.length ? 'done' : 'skipped');
-    setObStep('face');
+    setObStep('contacts');
   };
+
+  if (installerChecking) {
+    return (
+      <>
+        <h1 id="gH" tabIndex={-1}>
+          Checking for installer cameras
+        </h1>
+        <p className="sub">
+          Seeing whether <b>{account?.installer?.name || 'your installer'}</b> has already connected cameras to your property.
+        </p>
+        <div className="chk-rad" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+          <span>
+            <Icon name="cam" size={24} />
+          </span>
+        </div>
+        <p className="g-hint" style={{ textAlign: 'center' }} role="status">
+          One moment…
+        </p>
+        <div className="onb-actions">
+          <button type="button" className="btn btn-g btn-lg" onClick={() => setObStep('face')}>
+            Back
+          </button>
+          <span className="sp" />
+          <button type="button" className="btn btn-w btn-lg" disabled>
+            Continue
+          </button>
+        </div>
+      </>
+    );
+  }
+
+  const instCams = cameras.filter(c => c.by);
+  const userCams = cameras.filter(c => !c.by);
 
   return (
     <>
@@ -147,40 +224,87 @@ export const CamerasStep: React.FC = () => {
             Add your cameras
           </h1>
           <p className="sub">
-            Connect the cameras ENDRA should watch. You can add more from Monitor at any time.
+            {instCams.length
+              ? `Your installer has already connected ${plural(instCams.length, 'camera')}. Add any others below, or continue.`
+              : 'Connect the cameras ENDRA should watch. You can add more from Monitor at any time.'}
           </p>
         </div>
       </header>
 
       <div className="onb-fm">
-        {/* Connected Cameras List */}
-        {cameras.length > 0 && (
-          <div className="card flush" style={{ marginBottom: '16px' }} aria-label="Connected cameras">
-            {cameras.map((c, i) => (
-              <div key={i} className="ccard">
-                <span className="ico">
-                  <Icon name="cam" size={19} />
-                </span>
-                <div className="mn">
-                  <b>{c.name}</b>
-                  <span className="s">
-                    {c.zone} · {c.method === 'auto' ? 'Auto scan' : c.method === 'qr' ? 'QR code' : 'Manual'}
+        {/* Installer Connected Cameras List */}
+        {instCams.length > 0 && !activeMethod && (
+          <div style={{ marginBottom: '16px' }}>
+            <h2 className="sech" style={{ marginTop: 0 }}>
+              Added by {instCams[0].by} · {instCams.length}
+            </h2>
+            <div className="card flush" aria-label="Cameras added by your installer">
+              {instCams.map((c, i) => (
+                <div key={i} className="ccard">
+                  <span className="ico">
+                    <Icon name="cam" size={19} />
                   </span>
+                  <div className="mn">
+                    <b>{c.name}</b>
+                    <span className="s">
+                      {c.loc || c.zone} · {c.zone} · Installer pairing
+                    </span>
+                  </div>
+                  <span className="pill">
+                    <Icon name="check" size={12} strokeWidth={2.6} /> Connected
+                  </span>
+                  <button
+                    type="button"
+                    className="ibtn"
+                    style={{ width: '36px', height: '36px' }}
+                    onClick={() => handleRemoveCamera(cameras.indexOf(c))}
+                    aria-label={`Remove ${c.name}`}
+                  >
+                    <Icon name="trash" size={17} />
+                  </button>
                 </div>
-                <span className="pill green">
-                  <Icon name="check" size={12} strokeWidth={2.6} /> Connected
-                </span>
-                <button
-                  type="button"
-                  className="ibtn"
-                  style={{ width: '36px', height: '36px' }}
-                  onClick={() => handleRemoveCamera(i)}
-                  aria-label={`Remove ${c.name}`}
-                >
-                  <Icon name="trash" size={16} />
-                </button>
-              </div>
-            ))}
+              ))}
+            </div>
+            <div className="note inst-note" style={{ marginTop: '10px' }}>
+              <Icon name="shield" size={17} />
+              <span>
+                <b>Your installer’s access is limited.</b> {instCams[0].by} added these cameras and could watch each feed for 2 minutes to check the install. They can’t see your live feeds, and they can’t remove or change your cameras. Only you can.
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* User Added Cameras List */}
+        {userCams.length > 0 && !activeMethod && (
+          <div style={{ marginBottom: '16px' }}>
+            <h2 className="sech">Your cameras · {userCams.length}</h2>
+            <div className="card flush" aria-label="Connected cameras">
+              {userCams.map((c, i) => (
+                <div key={i} className="ccard">
+                  <span className="ico">
+                    <Icon name="cam" size={19} />
+                  </span>
+                  <div className="mn">
+                    <b>{c.name}</b>
+                    <span className="s">
+                      {c.zone} · {c.method === 'auto' ? 'Auto scan' : c.method === 'qr' ? 'QR code' : 'Manual'}
+                    </span>
+                  </div>
+                  <span className="pill green">
+                    <Icon name="check" size={12} strokeWidth={2.6} /> Connected
+                  </span>
+                  <button
+                    type="button"
+                    className="ibtn"
+                    style={{ width: '36px', height: '36px' }}
+                    onClick={() => handleRemoveCamera(cameras.indexOf(c))}
+                    aria-label={`Remove ${c.name}`}
+                  >
+                    <Icon name="trash" size={16} />
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -590,14 +714,10 @@ export const CamerasStep: React.FC = () => {
           .
         </p>
 
-        <div className="note" style={{ marginTop: '14px', fontSize: '13px' }}>
-          Sample cameras and events are already loaded in this preview, so your portal isn’t empty when you open it.
-        </div>
-
         {/* Action bar */}
         <OnboardingActions
           showBack={true}
-          onBack={() => setObStep('property')}
+          onBack={() => setObStep('face')}
           continueLabel={cameras.length ? 'Continue' : 'Skip for now'}
           isSecondaryContinue={cameras.length === 0}
           onContinue={handleContinue}

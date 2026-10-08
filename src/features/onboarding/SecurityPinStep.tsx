@@ -176,13 +176,13 @@ export const SecurityPinStep: React.FC = () => {
     } else if (phase === 'done') {
       handleResetPins();
     } else {
-      setObStep('face');
+      setObStep('property');
     }
   };
 
   const handleContinue = () => {
     markStepComplete('pins', 'done');
-    setObStep('contacts');
+    setObStep('face');
   };
 
   return (

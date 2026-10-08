@@ -2,12 +2,13 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Icon } from '../../components/icons/Icon';
 import { normPhone, phoneOk, EMAIL_RE, pwScore } from '../../utils/authHelpers';
+import { OB_STEPS } from '../../data/onboardingData';
 
 export const SignupView: React.FC = () => {
-  const { signup, setAuthView } = useAuth();
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
+  const { signupData, signup, setAuthView } = useAuth();
+  const [name, setName] = useState(signupData?.name || '');
+  const [phone, setPhone] = useState(signupData?.phone || '');
+  const [email, setEmail] = useState(signupData?.email || '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [terms, setTerms] = useState(true);
@@ -33,26 +34,28 @@ export const SignupView: React.FC = () => {
     const newErrors: Record<string, string> = {};
 
     if (!name.trim() || name.trim().split(' ').length < 2) {
-      newErrors.name = 'Use your first and last name.';
+      newErrors.name = 'Enter your first and last name.';
     }
 
     const cleanPhone = normPhone(phone);
     if (!phoneOk(cleanPhone)) {
-      newErrors.phone = 'Enter a valid 10-digit Nigerian mobile number.';
+      newErrors.phone = 'Enter a valid Nigerian mobile number, for example 803 415 9920.';
     }
 
     if (!EMAIL_RE.test(email.trim())) {
-      newErrors.email = 'Enter a valid email address.';
+      newErrors.email = 'Enter a valid email address, for example name@example.com.';
     }
 
-    if (password.length < 8) {
-      newErrors.password = 'Use at least 8 characters with letters and numbers.';
+    if (!password) {
+      newErrors.password = 'Create a password.';
+    } else if (password.length < 8) {
+      newErrors.password = 'Use at least 8 characters.';
     } else if (score < 2) {
-      newErrors.password = 'This password is too easy to guess.';
+      newErrors.password = 'That password is too common. Choose something harder to guess.';
     }
 
     if (!terms) {
-      newErrors.terms = 'Please accept the terms to continue.';
+      newErrors.terms = 'Agree to the Terms of Service and Privacy Policy to continue.';
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -66,6 +69,28 @@ export const SignupView: React.FC = () => {
 
   return (
     <div>
+      {/* 10-step progress bar before setup rail */}
+      <div className="acprog" role="img" aria-label={`Step 1 of ${OB_STEPS.length}: Create Account`}>
+        <div className="segs">
+          {OB_STEPS.map((_, i) => (
+            <i key={i} className={i < 1 ? 'on' : ''} />
+          ))}
+        </div>
+        <div className="lab">
+          <span>Step 01 of {OB_STEPS.length}</span>
+          <span>{OB_STEPS[0].t}</span>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        className="linkb"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginBottom: '14px', fontSize: '13.5px' }}
+        onClick={() => setAuthView('start')}
+      >
+        <Icon name="chevl" size={14} /> Back
+      </button>
+
       <h1 id="gH" tabIndex={-1}>
         Create your account
       </h1>
@@ -183,7 +208,7 @@ export const SignupView: React.FC = () => {
               ))}
             </div>
             <div className="meter-l">
-              <span>{password ? ['','Weak','Okay','Good','Strong'][score] : 'Use at least 8 characters'}</span>
+              <span>{password ? ['', 'Weak', 'Okay', 'Good', 'Strong'][score] : 'Use at least 8 characters'}</span>
               <span>
                 {password && score < 2
                   ? password.length < 8
@@ -208,26 +233,7 @@ export const SignupView: React.FC = () => {
               }}
             />
             <span>
-              I agree to the ENDRA{' '}
-              <button
-                type="button"
-                className="linkb"
-                onClick={e => {
-                  e.preventDefault();
-                }}
-              >
-                Terms of service
-              </button>{' '}
-              and{' '}
-              <button
-                type="button"
-                className="linkb"
-                onClick={e => {
-                  e.preventDefault();
-                }}
-              >
-                Privacy policy
-              </button>
+              I agree to the <span className="linkb">Terms of Service</span> and <span className="linkb">Privacy Policy</span>.
             </span>
           </label>
           {errors.terms && (
@@ -239,7 +245,7 @@ export const SignupView: React.FC = () => {
         </div>
 
         <button className="btn btn-w btn-lg btn-block" type="submit">
-          Continue
+          Create account
         </button>
       </form>
 

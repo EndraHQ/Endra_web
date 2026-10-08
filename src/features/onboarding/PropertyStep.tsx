@@ -52,7 +52,7 @@ export const PropertyStep: React.FC = () => {
   const handleNextDetails = (e: React.FormEvent) => {
     e.preventDefault();
     markStepComplete('property', 'done');
-    setObStep('cameras');
+    setObStep('pins');
   };
 
   return (
