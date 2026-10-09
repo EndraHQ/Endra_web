@@ -34,10 +34,13 @@ Thumbs.db
 *.env
 
 # Local reference and audit artifacts (MUST NOT be committed)
+endra-web.html
+endra-updated-mobile-app.html
+ENDRA-API-INTEGRATION-AUDIT.md
+ENDRA-FRONTEND-UI-AUDIT.md
 ENDRA - Web app (1).html
 ENDRA — Web app (1).html
 ENDRA - Web app with sign up and onboarding (4).html
 ENDRA — Web app with sign up and onboarding (4).html
 ENDRA Registration & Access Flow.pdf
-ENDRA-FRONTEND-UI-AUDIT.md
 *.pdf

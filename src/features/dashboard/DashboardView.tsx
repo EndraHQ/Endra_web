@@ -168,6 +168,45 @@ export const DashboardView: React.FC = () => {
           </div>
         </section>
 
+        {/* Mobile App Promo Card */}
+        <section className="app-promo s12" aria-label="Get the mobile app">
+          <span className="ap-ic" aria-hidden="true">
+            <Icon name="mobile" size={24} />
+          </span>
+          <div className="mn">
+            <h2 style={{ fontSize: '15px', fontWeight: 600, margin: '0 0 4px' }}>Take ENDRA with you</h2>
+            <p style={{ margin: '0 0 10px', fontSize: '13px', color: 'var(--g300)' }}>
+              Watch live feeds from anywhere, get instant threat alerts, and trigger emergency SOS on your phone.
+            </p>
+            <ol className="ap-steps" aria-label="How it works">
+              <li>
+                <b>1</b>Download the app
+              </li>
+              <li className="ap-sep" aria-hidden="true">
+                <Icon name="arrow" size={14} />
+              </li>
+              <li>
+                <b>2</b>Log in with this same account
+              </li>
+              <li className="ap-sep" aria-hidden="true">
+                <Icon name="arrow" size={14} />
+              </li>
+              <li>
+                <b>3</b>Your property and cameras are already there
+              </li>
+            </ol>
+          </div>
+          <div className="ap-actions">
+            <button
+              type="button"
+              className="btn btn-w"
+              onClick={() => go('settings/app')}
+            >
+              Get the app
+            </button>
+          </div>
+        </section>
+
         {/* Live Cameras */}
         <section className="s12" aria-label="Live cameras">
           <div className="sec-hd">

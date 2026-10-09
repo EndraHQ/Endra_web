@@ -2661,3 +2661,430 @@ textarea.in {
   color: var(--bk);
   border-color: var(--white);
 }
+
+/* ==========================================================================
+   Plans View & Billing Management
+   ========================================================================== */
+.plans-view {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding-bottom: 60px;
+}
+
+.app-handoff-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 18px;
+  background: color-mix(in srgb, var(--blue) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--blue) 35%, transparent);
+  border-radius: 12px;
+  margin-bottom: 24px;
+  font-size: 13.5px;
+}
+
+.app-handoff-banner .handoff-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.billing-toggle-wrap {
+  display: inline-flex;
+  background: var(--g900);
+  border: 1px solid var(--g800);
+  border-radius: 12px;
+  padding: 4px;
+  gap: 4px;
+}
+
+.billing-toggle-wrap .toggle-tab {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 9px;
+  border: none;
+  background: transparent;
+  color: var(--g400);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.15s ease;
+}
+
+.billing-toggle-wrap .toggle-tab.active {
+  background: var(--g800);
+  color: var(--fg);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.save-badge {
+  background: var(--green);
+  color: #000;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 999px;
+  text-transform: uppercase;
+}
+
+.current-plan-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 32px;
+  background: var(--g900);
+  border: 1px solid var(--g800);
+  border-radius: 20px;
+  padding: 28px;
+  margin-bottom: 36px;
+  align-items: center;
+}
+
+.current-plan-card h2 {
+  font-size: 24px;
+  margin: 10px 0 8px;
+}
+
+.plan-renewal-note {
+  font-size: 13px;
+  color: var(--g400);
+  line-height: 1.45;
+}
+
+.plan-meters {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.meter-item .meter-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12.5px;
+  margin-bottom: 6px;
+  color: var(--g400);
+}
+
+.meter-item .meter-label b {
+  color: var(--fg);
+}
+
+.meter-bar {
+  height: 8px;
+  background: var(--g800);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.meter-fill {
+  height: 100%;
+  background: var(--accent, var(--green));
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.plan-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--g900);
+  border: 1px solid var(--g800);
+  border-radius: 20px;
+  padding: 28px 24px;
+  position: relative;
+  transition: border-color 0.2s;
+}
+
+.plan-card.popular {
+  border-color: color-mix(in srgb, var(--accent, var(--green)) 50%, var(--g800));
+}
+
+.plan-card.current {
+  border-color: var(--g600);
+}
+
+.popular-badge, .current-badge {
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 4px 12px;
+  border-radius: 999px;
+}
+
+.popular-badge {
+  background: var(--accent, var(--green));
+  color: #000;
+}
+
+.current-badge {
+  background: var(--g700);
+  color: var(--fg);
+}
+
+.plan-card-header h3 {
+  font-size: 20px;
+  margin-bottom: 4px;
+}
+
+.plan-card-desc {
+  font-size: 13px;
+  color: var(--g400);
+  min-height: 38px;
+  margin-bottom: 16px;
+}
+
+.plan-price {
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--g800);
+}
+
+.plan-price .amount {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.plan-price .period {
+  display: block;
+  font-size: 12px;
+  color: var(--g500);
+  margin-top: 4px;
+}
+
+.plan-features {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 28px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+}
+
+.plan-features li {
+  display: flex;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--g300);
+  align-items: flex-start;
+  line-height: 1.4;
+}
+
+.feat-check {
+  color: var(--green);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.billing-details-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 36px;
+}
+
+.payment-card-display {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  background: var(--g850);
+  border-radius: 12px;
+  margin-top: 14px;
+}
+
+.card-chip-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--g800);
+  display: grid;
+  place-items: center;
+  color: var(--accent, var(--green));
+}
+
+.card-details {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13.5px;
+}
+
+.card-details span {
+  font-size: 12px;
+  color: var(--g500);
+}
+
+.invoice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.invoice-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  background: var(--g850);
+  border-radius: 10px;
+  font-size: 13.5px;
+}
+
+.inv-date {
+  display: block;
+  font-size: 12px;
+  color: var(--g500);
+  margin-top: 2px;
+}
+
+/* ==========================================================================
+   Onboarding Review Step (Step 10)
+   ========================================================================== */
+.onb-summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.onb-summary-card {
+  background: var(--g900);
+  border: 1px solid var(--g800);
+  border-radius: 16px;
+  padding: 18px 20px;
+}
+
+.onb-summary-card.plan-highlight {
+  border-color: color-mix(in srgb, var(--accent, var(--green)) 35%, var(--g800));
+  background: color-mix(in srgb, var(--accent, var(--green)) 4%, var(--g900));
+}
+
+.onb-summary-hd {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--g850);
+}
+
+.onb-summary-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  color: var(--fg);
+}
+
+.onb-edit-btn {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent, var(--green));
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.onb-edit-btn:hover {
+  background: var(--g800);
+}
+
+.onb-summary-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.onb-kv {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--g400);
+}
+
+.onb-kv b {
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.plan-name-tag {
+  color: var(--accent, var(--green)) !important;
+  font-weight: 700 !important;
+}
+
+.onb-cam-pills, .onb-contact-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.onb-cam-pill, .onb-contact-pill {
+  font-size: 12px;
+  padding: 4px 10px;
+  background: var(--g800);
+  border-radius: 8px;
+  color: var(--g300);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ==========================================================================
+   Downgrade Camera Selection Dialog
+   ========================================================================== */
+.downgrade-dialog {
+  max-width: 520px;
+  width: 92%;
+  background: var(--g900);
+  border-radius: 20px;
+  border: 1px solid var(--g800);
+}
+
+.cam-select-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.cam-check-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--g850);
+  border: 1px solid var(--g800);
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 13.5px;
+}
+
+.cam-check-item.selected {
+  border-color: var(--accent, var(--green));
+  background: color-mix(in srgb, var(--green) 8%, var(--g850));
+}
+
+.cam-type-tag {
+  margin-left: auto;
+  font-size: 11px;
+  padding: 2px 6px;
+  background: var(--g800);
+  border-radius: 6px;
+  color: var(--g400);
+}
+

@@ -1,18 +1,23 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
 import { useModals } from '../../context/ModalContext';
 import { Icon } from '../../components/icons/Icon';
 import { Toggle } from '../../components/common/Toggle';
 import { FAQS } from '../../data/faqs';
+import { MAX_CONTACTS, REL_OPTS } from '../../data/onboardingData';
 import { initials } from '../../utils/formatters';
+import { normPhone, phoneOk, fmtPhone } from '../../utils/authHelpers';
 
 const SET_SECS = [
   { id: 'account', label: 'Account', icon: 'user' },
   { id: 'security', label: 'Security', icon: 'lock' },
+  { id: 'contacts', label: 'Emergency contacts', icon: 'phone' },
   { id: 'faces', label: 'Face registry', icon: 'scan' },
   { id: 'notifications', label: 'Notifications', icon: 'bell' },
   { id: 'preferences', label: 'Preferences', icon: 'gear' },
   { id: 'subscription', label: 'Subscription', icon: 'card' },
+  { id: 'app', label: 'Mobile app', icon: 'device' },
   { id: 'help', label: 'Help & support', icon: 'help' }
 ];
 
@@ -32,10 +37,23 @@ export const SettingsView: React.FC = () => {
     toast
   } = useApp();
 
+  const { account, onboardingData, updateOnboardingData } = useAuth();
   const { openModal } = useModals();
 
   const activeSec = SET_SECS.some(s => s.id === route.a) ? (route.a as string) : 'account';
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+
+  // Contacts state
+  const contacts = onboardingData.contacts || [];
+  const [showAddContact, setShowAddContact] = useState(false);
+  const [cName, setCName] = useState('');
+  const [cPhone, setCPhone] = useState('');
+  const [cRel, setCRel] = useState('Spouse');
+  const [cOther, setCOther] = useState('');
+  const [cErr, setCErr] = useState<Record<string, string>>({});
+
+  // App guide state
+  const [appOs, setAppOs] = useState<'ios' | 'android'>('ios');
 
   const toggleSetting = (k: keyof typeof settings) => {
     setSettings(prev => {
@@ -67,6 +85,45 @@ export const SettingsView: React.FC = () => {
         toast(`${f.me ? 'Your face' : f.name} removed from registry`);
       }
     );
+  };
+
+  const handleSaveContact = () => {
+    const err: Record<string, string> = {};
+    const cleanName = cName.trim().replace(/\s+/g, ' ');
+    const cleanPhone = normPhone(cPhone);
+
+    if (cleanName.length < 2) err.name = 'Enter their name.';
+    if (!phoneOk(cleanPhone)) err.phone = 'Enter a valid Nigerian mobile number.';
+    else if (contacts.some(c => c.phone === cleanPhone)) err.phone = 'You’ve already added this number.';
+
+    if (Object.keys(err).length > 0) {
+      setCErr(err);
+      return;
+    }
+
+    const nextContacts = [
+      ...contacts,
+      {
+        name: cleanName,
+        phone: cleanPhone,
+        rel: cRel === 'Other' ? cOther.trim() || 'Other' : cRel
+      }
+    ];
+    updateOnboardingData({ contacts: nextContacts });
+    setCName('');
+    setCPhone('');
+    setCRel('Spouse');
+    setCOther('');
+    setCErr({});
+    setShowAddContact(false);
+    toast(`${cleanName} added to emergency contacts`);
+  };
+
+  const handleDeleteContact = (idx: number) => {
+    const c = contacts[idx];
+    const next = contacts.filter((_, i) => i !== idx);
+    updateOnboardingData({ contacts: next });
+    if (c) toast(`${c.name} removed`);
   };
 
   const setRow = (
@@ -257,6 +314,114 @@ export const SettingsView: React.FC = () => {
             </section>
           )}
 
+          {/* Emergency Contacts Section */}
+          {activeSec === 'contacts' && (
+            <section>
+              <div className="sec-hd">
+                <div>
+                  <h2>Emergency contacts · {contacts.length}</h2>
+                  <p className="sub" style={{ marginTop: '3px' }}>
+                    When you press SOS, ENDRA alerts these people along with the operators.
+                  </p>
+                </div>
+                {contacts.length < MAX_CONTACTS && !showAddContact && (
+                  <button
+                    type="button"
+                    className="btn btn-w btn-sm"
+                    onClick={() => setShowAddContact(true)}
+                  >
+                    <Icon name="plus" size={16} /> Add contact
+                  </button>
+                )}
+              </div>
+
+              {showAddContact && (
+                <div className="card" style={{ marginBottom: '16px' }}>
+                  <div className="cardhd">Add emergency contact</div>
+                  <div className="fld">
+                    <label htmlFor="scName">Full name</label>
+                    <input
+                      className={`in ${cErr.name ? 'bad' : ''}`}
+                      id="scName"
+                      value={cName}
+                      placeholder="e.g. Chidi Okonkwo"
+                      onChange={e => setCName(e.target.value)}
+                    />
+                  </div>
+                  <div className="fld">
+                    <label htmlFor="scPhone">Phone number</label>
+                    <div className={`pfx ${cErr.phone ? 'bad' : ''}`}>
+                      <span>+234</span>
+                      <input
+                        id="scPhone"
+                        type="tel"
+                        placeholder="803 415 9920"
+                        value={cPhone}
+                        onChange={e => setCPhone(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="fld">
+                    <span className="lbl">Relationship</span>
+                    <div className="rcs">
+                      {REL_OPTS.map(r => (
+                        <label key={r} className="rc rcp">
+                          <input
+                            type="radio"
+                            name="scRel"
+                            value={r}
+                            checked={cRel === r}
+                            onChange={() => setCRel(r)}
+                          />
+                          <span className="rc-in">{r}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
+                    <button type="button" className="btn btn-w" onClick={handleSaveContact}>
+                      Save contact
+                    </button>
+                    <button type="button" className="btn btn-g" onClick={() => setShowAddContact(false)}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="card flush list">
+                {contacts.length > 0 ? (
+                  contacts.map((c, i) => (
+                    <div key={i} className="li">
+                      <div className="av">{initials(c.name)}</div>
+                      <div className="mn">
+                        <div className="t">{c.name}</div>
+                        <div className="s">{c.rel} · {fmtPhone(c.phone)}</div>
+                      </div>
+                      <button
+                        type="button"
+                        className="ibtn"
+                        style={{ width: '36px', height: '36px' }}
+                        onClick={() => handleDeleteContact(i)}
+                        aria-label={`Remove ${c.name}`}
+                      >
+                        <Icon name="trash" size={17} />
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <div className="empty">
+                    <h3>No emergency contacts yet</h3>
+                    <p>Add someone ENDRA can contact when you press SOS.</p>
+                  </div>
+                )}
+              </div>
+              <p className="note" style={{ marginTop: '14px' }}>
+                You can add up to {MAX_CONTACTS} contacts.
+              </p>
+            </section>
+          )}
+
           {/* Face Registry Section */}
           {activeSec === 'faces' && (
             <section>
@@ -417,10 +582,68 @@ export const SettingsView: React.FC = () => {
                   <button
                     type="button"
                     className="btn btn-w"
-                    onClick={() => openModal({ type: 'plans' })}
+                    onClick={() => go('plans')}
                   >
-                    Upgrade plan
+                    View plans & billing
                   </button>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* Mobile App Section */}
+          {activeSec === 'app' && (
+            <section>
+              <div className="card">
+                <div className="sec-hd">
+                  <div>
+                    <h2>Take ENDRA with you</h2>
+                    <p className="sub" style={{ marginTop: '3px' }}>
+                      Install the ENDRA mobile app to monitor your property from anywhere.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="ag-dl" style={{ display: 'flex', gap: '20px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ width: '140px', height: '140px', background: '#fff', borderRadius: '12px', padding: '10px', display: 'grid', placeItems: 'center' }}>
+                      <svg width="120" height="120" viewBox="0 0 114 114" fill="none">
+                        <rect width="114" height="114" fill="#fff" />
+                        <rect x="8" y="8" width="32" height="32" rx="4" fill="#000" />
+                        <rect x="14" y="14" width="20" height="20" fill="#fff" />
+                        <rect x="18" y="18" width="12" height="12" fill="#000" />
+                        <rect x="74" y="8" width="32" height="32" rx="4" fill="#000" />
+                        <rect x="80" y="14" width="20" height="20" fill="#fff" />
+                        <rect x="84" y="18" width="12" height="12" fill="#000" />
+                        <rect x="8" y="74" width="32" height="32" rx="4" fill="#000" />
+                        <rect x="14" y="80" width="20" height="20" fill="#fff" />
+                        <rect x="18" y="84" width="12" height="12" fill="#000" />
+                        <circle cx="57" cy="57" r="10" fill="#000" />
+                        <rect x="48" y="12" width="6" height="16" fill="#000" />
+                        <rect x="60" y="86" width="16" height="6" fill="#000" />
+                        <rect x="86" y="56" width="14" height="6" fill="#000" />
+                      </svg>
+                    </div>
+                    <small className="muted" style={{ display: 'block', marginTop: '6px' }}>Scan with camera</small>
+                  </div>
+
+                  <div style={{ flex: 1, minWidth: '240px' }}>
+                    <div className="tabs" role="tablist" aria-label="Your phone" style={{ marginBottom: '14px' }}>
+                      <button type="button" role="tab" aria-selected={appOs === 'ios'} className={`tab ${appOs === 'ios' ? 'on' : ''}`} onClick={() => setAppOs('ios')}>iPhone</button>
+                      <button type="button" role="tab" aria-selected={appOs === 'android'} className={`tab ${appOs === 'android' ? 'on' : ''}`} onClick={() => setAppOs('android')}>Android</button>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button type="button" className="btn btn-g btn-sm" onClick={() => toast('SMS link sent to ' + user.phone)}>
+                        <Icon name="phone" size={14} /> Text link
+                      </button>
+                      <button type="button" className="btn btn-g btn-sm" onClick={() => toast('Email link sent to ' + user.email)}>
+                        <Icon name="chat" size={14} /> Email link
+                      </button>
+                      <button type="button" className="btn btn-g btn-sm" onClick={() => { navigator.clipboard?.writeText('https://apps.apple.com/app/endra'); toast('Link copied'); }}>
+                        <Icon name="link" size={14} /> Copy link
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </section>

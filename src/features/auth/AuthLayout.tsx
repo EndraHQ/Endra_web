@@ -4,6 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { Logo } from '../../components/icons/Logo';
 import { Icon } from '../../components/icons/Icon';
 import { FeedCanvas } from '../../components/media/FeedCanvas';
+import { LandingView } from './LandingView';
 import { LoginView } from './LoginView';
 import { SignupView } from './SignupView';
 import { OtpView } from './OtpView';
@@ -67,7 +68,9 @@ export const AuthLayout: React.FC = () => {
   const { authView, setAuthView } = useAuth();
   const { effectiveTheme, toggleTheme, toast } = useApp();
 
-  const isTab = authView === 'login' || authView === 'signup';
+  if (authView === 'start') {
+    return <LandingView />;
+  }
 
   const renderView = () => {
     switch (authView) {
@@ -112,13 +115,13 @@ export const AuthLayout: React.FC = () => {
           </div>
 
           <div className="auth-card">
-            {isTab && (
+            {authView === 'login' && (
               <div className="tabs full" role="tablist" aria-label="Account">
                 <button
                   type="button"
                   role="tab"
-                  aria-selected={authView === 'signup'}
-                  className={`tab ${authView === 'signup' ? 'on' : ''}`}
+                  aria-selected={false}
+                  className="tab"
                   onClick={() => setAuthView('signup')}
                 >
                   Create account
@@ -126,8 +129,8 @@ export const AuthLayout: React.FC = () => {
                 <button
                   type="button"
                   role="tab"
-                  aria-selected={authView === 'login'}
-                  className={`tab ${authView === 'login' ? 'on' : ''}`}
+                  aria-selected={true}
+                  className="tab on"
                   onClick={() => setAuthView('login')}
                 >
                   Log in

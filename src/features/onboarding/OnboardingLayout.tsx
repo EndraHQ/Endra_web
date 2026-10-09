@@ -13,6 +13,7 @@ import { SecurityPinStep } from './SecurityPinStep';
 import { EmergencyContactsStep } from './EmergencyContactsStep';
 import { AlertsLocationsStep } from './AlertsLocationsStep';
 import { PlanStep } from './PlanStep';
+import { ReviewStep } from './ReviewStep';
 import { OnboardingComplete } from './OnboardingComplete';
 
 export const DialProgress: React.FC<{
@@ -115,6 +116,8 @@ export const OnboardingLayout: React.FC = () => {
         return onboardingData.alerts?.notifPush ? 'Alerts configured' : '';
       case 'plans':
         return onboardingData.plan ? planById(onboardingData.plan).name : '';
+      case 'review':
+        return 'Ready to launch';
       default:
         return '';
     }
@@ -136,6 +139,8 @@ export const OnboardingLayout: React.FC = () => {
         return <AlertsLocationsStep />;
       case 'plans':
         return <PlanStep />;
+      case 'review':
+        return <ReviewStep />;
       case 'ready':
         return <OnboardingComplete />;
       default:

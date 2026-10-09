@@ -169,12 +169,21 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | null>(null);
 
 function parsePath(hashPath: string): RouteState {
-  const clean = hashPath.replace(/^#\/?/, '') || 'home';
-  const seg = clean.split('/').filter(Boolean);
+  const clean = hashPath.replace(/^#\/?/, '') || 'start';
+  const [pathPart, queryPart] = clean.split('?');
+  const seg = pathPart.split('/').filter(Boolean);
+  const query: Record<string, string> = {};
+  if (queryPart) {
+    const searchParams = new URLSearchParams(queryPart);
+    searchParams.forEach((val, key) => {
+      query[key] = val;
+    });
+  }
   return {
-    name: (seg[0] as RouteName) || 'home',
+    name: (seg[0] as RouteName) || 'start',
     a: seg[1],
-    b: seg[2]
+    b: seg[2],
+    query
   };
 }
 
@@ -182,9 +191,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Routing
   const [path, setPath] = useState<string>(() => {
     try {
-      return (window.location.hash || '#/home').replace(/^#\/?/, '') || 'home';
+      return (window.location.hash || '#/start').replace(/^#\/?/, '') || 'start';
     } catch {
-      return 'home';
+      return 'start';
     }
   });
 
@@ -201,7 +210,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     const handleHashChange = () => {
-      const p = (window.location.hash || '#/home').replace(/^#\/?/, '') || 'home';
+      const p = (window.location.hash || '#/start').replace(/^#\/?/, '') || 'start';
       setPath(p);
       window.scrollTo(0, 0);
     };
@@ -573,6 +582,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Set document title dynamically
   useEffect(() => {
     const titles: Record<RouteName, string> = {
+      start: 'Know your property is safe',
+      login: 'Log in',
+      signup: 'Create your account',
+      welcome: 'Set up ENDRA',
       home: 'Home',
       monitor: 'Monitor',
       activity: 'Activity',
@@ -580,9 +593,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       sos: 'Emergency SOS',
       properties: 'Properties',
       access: 'Shared access',
-      settings: 'Settings'
+      plans: 'Plans & Billing',
+      settings: 'Settings',
+      open: 'ENDRA'
     };
-    document.title = `ENDRA — ${titles[route.name] || 'Home'}`;
+    document.title = `ENDRA — ${titles[route.name] || 'Know your property is safe'}`;
   }, [route.name]);
 
   const value = useMemo(() => ({

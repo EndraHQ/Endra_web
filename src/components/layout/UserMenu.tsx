@@ -43,6 +43,30 @@ export const UserMenu: React.FC<{
         <button
           onClick={() => {
             onClose();
+            go('settings/contacts');
+          }}
+        >
+          <Icon name="phone" size={18} /> Emergency contacts
+        </button>
+        <button
+          onClick={() => {
+            onClose();
+            go('settings/app');
+          }}
+        >
+          <Icon name="mobile" size={18} /> Get the mobile app
+        </button>
+        <button
+          onClick={() => {
+            onClose();
+            go('plans');
+          }}
+        >
+          <Icon name="card" size={18} /> Plans
+        </button>
+        <button
+          onClick={() => {
+            onClose();
             go('settings/preferences');
           }}
         >
@@ -198,7 +222,7 @@ export const MoreMenu: React.FC<{
   onClose: () => void;
   anchorRect: DOMRect | null;
 }> = ({ isOpen, onClose, anchorRect }) => {
-  const { user, threads, go } = useApp();
+  const { user, threads, go, effectiveTheme, toggleTheme } = useApp();
 
   if (!isOpen || !anchorRect) return null;
 
@@ -206,7 +230,7 @@ export const MoreMenu: React.FC<{
 
   const style: React.CSSProperties = {
     left: `${Math.max(10, anchorRect.right - 240)}px`,
-    top: `${Math.max(10, anchorRect.top - 210)}px`
+    top: `${Math.max(10, anchorRect.top - 260)}px`
   };
 
   return createPortal(
@@ -241,10 +265,26 @@ export const MoreMenu: React.FC<{
         <button
           onClick={() => {
             onClose();
+            go('plans');
+          }}
+        >
+          <Icon name="card" size={18} /> Plans
+        </button>
+        <button
+          onClick={() => {
+            onClose();
             go('settings');
           }}
         >
           <Icon name="gear" size={18} /> Settings
+        </button>
+        <button
+          onClick={() => {
+            onClose();
+            toggleTheme();
+          }}
+        >
+          <Icon name={effectiveTheme === 'light' ? 'moon' : 'sun'} size={18} /> Switch to {effectiveTheme === 'light' ? 'dark' : 'light'} theme
         </button>
         <hr />
         <button

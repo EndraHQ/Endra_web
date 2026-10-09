@@ -10,6 +10,7 @@ import { hashPw, rid, normPhone } from '../utils/authHelpers';
 
 export type AppStage = 'auth' | 'onboarding' | 'portal';
 export type AuthView =
+  | 'start'
   | 'login'
   | 'signup'
   | 'otp'
@@ -25,6 +26,8 @@ export interface UserAccount {
   pwHash: string;
   salt: string;
   created: number;
+  installer?: { name: string; phone?: string; code?: string } | null;
+  billing?: { method: string; last4?: string | null; trialEnds?: number | null } | null;
   ob: {
     step: string;
     steps: Record<string, string>;
@@ -32,6 +35,11 @@ export interface UserAccount {
     done: boolean;
     data: OnboardingData;
   };
+}
+
+export interface PendingIntent {
+  intent: string;
+  params?: Record<string, string>;
 }
 
 interface AuthContextType {
@@ -44,10 +52,14 @@ interface AuthContextType {
   onboardingStep: string;
   onboardingMax: number;
   onboardingSteps: Record<string, string>;
-  signupData: { name: string; phone: string; email: string; pw: string } | null;
+  signupData: { name: string; phone: string; email: string; pw: string; installerCode?: string } | null;
   otpCode: string[];
   setOtpCode: React.Dispatch<React.SetStateAction<string[]>>;
-  signup: (name: string, phone: string, email: string, pw: string) => Promise<boolean>;
+  pendingIntent: PendingIntent | null;
+  savePendingIntent: (intent: string, params?: Record<string, string>) => void;
+  clearPendingIntent: () => void;
+  consumePendingIntent: () => PendingIntent | null;
+  signup: (name: string, phone: string, email: string, pw: string, installerCode?: string) => Promise<boolean>;
   verifyOtp: (code: string) => Promise<boolean>;
   login: (id: string, pw: string) => Promise<{ ok: boolean; err?: string }>;
   loginSample: () => void;
@@ -96,15 +108,18 @@ const DEFAULT_SAMPLE_ACCOUNT: UserAccount = {
   ob: {
     step: 'ready',
     steps: {
+      account: 'done',
+      verify: 'done',
       property: 'done',
-      cameras: 'done',
-      face: 'done',
       pins: 'done',
+      face: 'done',
+      cameras: 'done',
       contacts: 'done',
       alerts: 'done',
-      plans: 'done'
+      plans: 'done',
+      review: 'done'
     },
-    max: 6,
+    max: 9,
     done: true,
     data: {
       ...defaultOnboardingData(),
@@ -119,34 +134,101 @@ const DEFAULT_SAMPLE_ACCOUNT: UserAccount = {
   }
 };
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [stage, setStageState] = useState<AppStage>('onboarding');
+const PORTAL_ROUTES = ['home', 'monitor', 'activity', 'messages', 'sos', 'properties', 'access', 'plans', 'settings'];
 
-  const [authView, setAuthView] = useState<AuthView>('login');
-  const [account, setAccount] = useState<UserAccount | null>(() => {
-    const activeEmail = store.get('endra.activeEmail');
-    if (activeEmail) {
-      const all = store.get('endra.accounts') || {};
-      return all[activeEmail] || null;
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Determine initial stage and view based on URL and stored session
+  const getInitialState = () => {
+    if (typeof window === 'undefined') {
+      return { stage: 'auth' as AppStage, authView: 'start' as AuthView, account: null as UserAccount | null };
     }
-    return null;
+    const hash = window.location.hash || '';
+    const clean = hash.replace(/^#\/?/, '');
+    const first = clean.split(/[\/?]/)[0];
+
+    const activeEmail = store.get('endra.activeEmail');
+    const all = store.get('endra.accounts') || {};
+    const acc: UserAccount | null = activeEmail ? all[activeEmail] || null : null;
+
+    // Smart entry route (#/open)
+    if (first === 'open') {
+      if (acc?.ob?.done) return { stage: 'portal' as AppStage, authView: 'login' as AuthView, account: acc };
+      if (acc) return { stage: 'onboarding' as AppStage, authView: 'login' as AuthView, account: acc };
+      return { stage: 'auth' as AppStage, authView: 'login' as AuthView, account: null };
+    }
+
+    // Explicit onboarding route (#/welcome)
+    if (first === 'welcome') {
+      return { stage: 'onboarding' as AppStage, authView: 'start' as AuthView, account: acc };
+    }
+
+    // Explicit login route (#/login)
+    if (first === 'login') {
+      return { stage: 'auth' as AppStage, authView: 'login' as AuthView, account: null };
+    }
+
+    // Explicit signup route (#/signup)
+    if (first === 'signup') {
+      return { stage: 'auth' as AppStage, authView: 'signup' as AuthView, account: null };
+    }
+
+    // Explicit portal routes (#/home, etc.)
+    if (PORTAL_ROUTES.includes(first)) {
+      if (acc?.ob?.done) {
+        return { stage: 'portal' as AppStage, authView: 'login' as AuthView, account: acc };
+      }
+      // Unauthenticated deep link defaults to start
+      return { stage: 'auth' as AppStage, authView: 'start' as AuthView, account: null };
+    }
+
+    // Normal root launch (/ or /#/ or #/start or empty) ALWAYS starts at Landing page
+    return { stage: 'auth' as AppStage, authView: 'start' as AuthView, account: null };
+  };
+
+  const initial = getInitialState();
+
+  const [account, setAccount] = useState<UserAccount | null>(initial.account);
+  const [stage, setStageState] = useState<AppStage>(initial.stage);
+  const [authView, setAuthView] = useState<AuthView>(initial.authView);
+
+  const [pendingIntent, setPendingIntent] = useState<PendingIntent | null>(() => {
+    return store.get('endra.pendingIntent') || null;
   });
 
   const [onboardingData, setOnboardingData] = useState<OnboardingData>(() => {
+    if (initial.account?.ob?.data) {
+      return initial.account.ob.data;
+    }
     return defaultOnboardingData();
   });
 
-  const [onboardingStep, setOnboardingStep] = useState<string>('property');
+  const [onboardingStep, setOnboardingStep] = useState<string>(() => {
+    if (initial.account?.ob?.step) {
+      return initial.account.ob.step;
+    }
+    return 'property';
+  });
 
-  const [onboardingSteps, setOnboardingSteps] = useState<Record<string, string>>({});
+  const [onboardingSteps, setOnboardingSteps] = useState<Record<string, string>>(() => {
+    if (initial.account?.ob?.steps) {
+      return initial.account.ob.steps;
+    }
+    return {};
+  });
 
-  const [onboardingMax, setOnboardingMax] = useState<number>(0);
+  const [onboardingMax, setOnboardingMax] = useState<number>(() => {
+    if (initial.account?.ob?.max) {
+      return initial.account.ob.max;
+    }
+    return 0;
+  });
 
   const [signupData, setSignupData] = useState<{
     name: string;
     phone: string;
     email: string;
     pw: string;
+    installerCode?: string;
   } | null>(null);
 
   const [otpCode, setOtpCode] = useState<string[]>(['', '', '', '', '', '']);
@@ -162,6 +244,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     document.body.setAttribute('data-stage', stage === 'portal' ? 'portal' : stage);
   }, [stage]);
 
+  const savePendingIntent = (intent: string, params?: Record<string, string>) => {
+    const item: PendingIntent = { intent, params };
+    setPendingIntent(item);
+    store.set('endra.pendingIntent', item);
+  };
+
+  const clearPendingIntent = () => {
+    setPendingIntent(null);
+    store.del('endra.pendingIntent');
+  };
+
+  const consumePendingIntent = (): PendingIntent | null => {
+    const current = pendingIntent || store.get('endra.pendingIntent') || null;
+    clearPendingIntent();
+    return current;
+  };
+
   const saveAccountToStore = (acc: UserAccount) => {
     const all = store.get('endra.accounts') || {};
     all[acc.email] = acc;
@@ -170,8 +269,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAccount(acc);
   };
 
-  const signup = async (name: string, phone: string, email: string, pw: string): Promise<boolean> => {
-    setSignupData({ name, phone, email, pw });
+  const signup = async (
+    name: string,
+    phone: string,
+    email: string,
+    pw: string,
+    installerCode?: string
+  ): Promise<boolean> => {
+    setSignupData({ name, phone, email, pw, installerCode });
     setOtpCode(['', '', '', '', '', '']);
     setAuthView('otp');
     return true;
@@ -190,21 +295,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       created: Date.now(),
       ob: {
         step: 'property',
-        steps: {},
-        max: 0,
+        steps: {
+          account: 'done',
+          verify: 'done'
+        },
+        max: 2,
         done: false,
         data: {
           ...defaultOnboardingData(),
           pname: '',
-          plan: 'plus'
+          plan: 'plus',
+          installerCode: signupData.installerCode || ''
         }
       }
     };
     saveAccountToStore(newAccount);
     setOnboardingData(newAccount.ob.data);
     setOnboardingStep('property');
-    setOnboardingSteps({});
-    setOnboardingMax(0);
+    setOnboardingSteps({ account: 'done', verify: 'done' });
+    setOnboardingMax(2);
     setSignupData(null);
     setStage('onboarding');
     return true;
@@ -251,11 +360,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (matched.ob.done) {
       setStage('portal');
+      try {
+        window.history.pushState(null, '', '#/home');
+      } catch {}
     } else {
       setOnboardingStep(matched.ob.step || 'property');
       setOnboardingSteps(matched.ob.steps || {});
       setOnboardingMax(matched.ob.max || 0);
       setStage('onboarding');
+      try {
+        window.history.pushState(null, '', '#/welcome');
+      } catch {}
     }
 
     return { ok: true };
@@ -269,13 +384,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     saveAccountToStore(sample);
     setOnboardingData(sample.ob.data);
     setStage('portal');
+    try {
+      window.history.pushState(null, '', '#/home');
+    } catch {}
   };
 
   const logout = () => {
     store.del('endra.activeEmail');
     setAccount(null);
-    setAuthView('login');
+    setAuthView('start');
     setStage('auth');
+    try {
+      window.history.pushState(null, '', '#/start');
+    } catch {}
   };
 
   const forgotPassword = async (id: string): Promise<{ ok: boolean; err?: string }> => {
@@ -375,6 +496,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     saveAccountToStore(updated);
     setStage('portal');
+    try {
+      window.history.pushState(null, '', '#/home');
+    } catch {}
   };
 
   const resetToStep = (stepId: string) => {
@@ -396,6 +520,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signupData,
         otpCode,
         setOtpCode,
+        pendingIntent,
+        savePendingIntent,
+        clearPendingIntent,
+        consumePendingIntent,
         signup,
         verifyOtp,
         login,

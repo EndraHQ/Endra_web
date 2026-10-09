@@ -35,7 +35,7 @@ export const PlanStep: React.FC = () => {
     if (!selectedPlanId) return;
     updateOnboardingData({ plan: selectedPlanId, planOk: true });
     markStepComplete('plans', 'done');
-    setObStep('ready');
+    setObStep('review');
   };
 
   const currentPlan = selectedPlanId ? planById(selectedPlanId) : null;

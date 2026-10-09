@@ -73,7 +73,7 @@ export const FaceIdStep: React.FC = () => {
 
   const handleContinue = () => {
     markStepComplete('face', done ? 'done' : 'skipped');
-    setObStep('pins');
+    setObStep('cameras');
   };
 
   return (
@@ -174,7 +174,7 @@ export const FaceIdStep: React.FC = () => {
         {/* Action bar */}
         <OnboardingActions
           showBack={true}
-          onBack={() => setObStep('cameras')}
+          onBack={() => setObStep('pins')}
           continueLabel="Continue"
           continueDisabled={!done}
           onContinue={handleContinue}

@@ -2,16 +2,20 @@ export interface OnboardingStepMeta {
   id: string;
   t: string;
   d: string;
+  lock?: boolean;
 }
 
 export const OB_STEPS: OnboardingStepMeta[] = [
-  { id: 'property', t: 'Your property', d: 'Location and basic details' },
-  { id: 'cameras', t: 'Add cameras', d: 'Connect and test' },
-  { id: 'face', t: 'Confirm it’s you', d: 'Face verification' },
-  { id: 'pins', t: 'Security PIN', d: 'Create your PIN' },
-  { id: 'contacts', t: 'Emergency contacts', d: 'Who we can call' },
-  { id: 'alerts', t: 'Alerts & locations', d: 'Preferences and zones' },
-  { id: 'plans', t: 'Plans', d: 'Compare and choose' }
+  { id: 'account', t: 'Create Account', d: 'Your details', lock: true },
+  { id: 'verify', t: 'Verify Phone', d: 'Confirm your number', lock: true },
+  { id: 'property', t: 'Your Property', d: 'Location and basic details' },
+  { id: 'pins', t: 'Security PIN', d: 'PIN and duress PIN' },
+  { id: 'face', t: 'Confirm Your Identity', d: 'Face verification' },
+  { id: 'cameras', t: 'Add Cameras', d: 'Connect and test' },
+  { id: 'contacts', t: 'Emergency Contacts', d: 'Who we can call' },
+  { id: 'alerts', t: 'Alerts & Notifications', d: 'Preferences and zones' },
+  { id: 'plans', t: 'Choose Plan', d: 'Compare and choose' },
+  { id: 'review', t: 'Review & Activate', d: 'Check and go live' }
 ];
 
 export const PLAN_FEATURES: [string, string][] = [
@@ -87,8 +91,11 @@ export interface AddedCamera {
   name: string;
   loc: string;
   zone: string;
-  method: 'auto' | 'qr' | 'manual';
+  src?: string;
+  type?: string;
+  method: 'auto' | 'qr' | 'manual' | 'installer';
   via?: string;
+  by?: string;
   ip?: string;
   port?: string;
   user?: string;
@@ -98,6 +105,12 @@ export interface EmergencyContactItem {
   name: string;
   phone: string;
   rel: string;
+}
+
+export interface OnboardingBilling {
+  method: 'card' | 'transfer' | 'none';
+  last4?: string | null;
+  trialEnds?: number | null;
 }
 
 export interface OnboardingData {
@@ -113,14 +126,15 @@ export interface OnboardingData {
   guard: string;
   cams: AddedCamera[];
   pins: {
-    access?: string;
-    duress?: string;
+    access?: boolean | string;
+    duress?: boolean | string;
+    duressSkipped?: boolean;
     skippedDuress?: boolean;
   };
   face: {
     enrolled?: boolean;
     tmpl?: string;
-    skipped?: boolean;
+    at?: number;
   };
   contacts: EmergencyContactItem[];
   alerts: {
@@ -133,12 +147,16 @@ export interface OnboardingData {
     notif?: string;
     geo?: string;
   };
-  zonePick: number | null;
+  zonePick: Record<string, boolean> | null;
   zoneSeen: string[];
   zoneCustom: string[];
   plan: string;
   planOk: boolean;
-  planLog?: { plan: string; when: number; reason: string }[];
+  installerCode?: string;
+  instChecked?: boolean;
+  appPromo?: string;
+  ccRequest?: { cams: string; note: string; at: number };
+  billing?: OnboardingBilling;
 }
 
 export const defaultOnboardingData = (): OnboardingData => ({
@@ -167,7 +185,8 @@ export const defaultOnboardingData = (): OnboardingData => ({
   zoneSeen: [],
   zoneCustom: [],
   plan: 'plus',
-  planOk: false
+  planOk: false,
+  instChecked: false
 });
 
 export const TYPE_META: Record<string, { ig: string; ph: string; lbl: string; sub: string }> = {
@@ -200,6 +219,8 @@ export const NG_STATES = [
 ];
 
 export const ONB_ICON: Record<string, string> = {
+  account: 'user',
+  verify: 'phone',
   property: 'building',
   cameras: 'cam',
   face: 'scan',
@@ -207,6 +228,7 @@ export const ONB_ICON: Record<string, string> = {
   contacts: 'users',
   alerts: 'bell',
   plans: 'card',
+  review: 'check',
   ready: 'check'
 };
 
@@ -215,6 +237,14 @@ export const ONB_WHY: Record<string, { t: string; p?: string; ul?: string[]; ol?
     t: 'Why we ask',
     p: 'Your property type and location help ENDRA suggest where to place cameras and which areas to watch.'
   },
+  pins: {
+    t: 'Two PINs, two jobs',
+    p: 'Your PIN arms and disarms the system. The duress PIN looks identical to anyone watching, but quietly alerts operators. Both are required.'
+  },
+  face: {
+    t: 'Your privacy',
+    p: 'ENDRA keeps an encrypted template of your face, not a photo. It confirms you’re the account owner and lets gates recognise you.'
+  },
   cameras: {
     t: 'Before you start',
     ul: [
@@ -222,14 +252,6 @@ export const ONB_WHY: Record<string, { t: string; p?: string; ul?: string[]; ol?
       'This device is on the same Wi-Fi as your cameras',
       'You have any camera logins to hand'
     ]
-  },
-  face: {
-    t: 'Your privacy',
-    p: 'ENDRA keeps an encrypted template of your face, not a photo. It confirms you’re the account owner and lets gates recognise you.'
-  },
-  pins: {
-    t: 'Two PINs, two jobs',
-    p: 'Your PIN arms and disarms the system. The duress PIN looks identical to anyone watching, but quietly alerts operators.'
   },
   contacts: {
     t: 'What happens when you press SOS',
@@ -243,13 +265,17 @@ export const ONB_WHY: Record<string, { t: string; p?: string; ul?: string[]; ol?
     t: 'Priority zones',
     p: 'Alerts from the zones you tick are marked high priority, so the ones that matter rise to the top.'
   },
+  review: {
+    t: 'Before you activate',
+    p: 'Check each item. Use Edit to change one, and you’ll come straight back here. Everything can be changed later in Settings.'
+  },
   ready: {
     t: 'What happens next',
     p: 'Your portal opens on the dashboard. From there you can install the mobile app and log in with this same account.'
   }
 };
 
-export const REL_OPTS = [
+export const CREL = [
   'Spouse',
   'Parent',
   'Sibling',
@@ -258,15 +284,45 @@ export const REL_OPTS = [
   'Neighbour',
   'Other'
 ];
+export const REL_OPTS = CREL;
 
 export const CX_METHODS: [string, string, string, string, string?][] = [
-  ['auto', 'search', 'Auto Scan Network', 'Finds cameras on your Wi-Fi automatically.', 'Recommended'],
-  ['qr', 'scan', 'Scan QR Code', 'Point your camera at the QR code on the box or label.', ''],
-  ['manual', 'link', 'Add Manually', 'Enter an IP address, RTSP link, or ONVIF port.', '']
+  ['auto', 'wifi', 'Auto Scan Network', 'Find cameras connected to your network automatically.', 'Recommended'],
+  ['qr', 'scan', 'Scan QR Code', 'Scan the QR code on your camera.', ''],
+  ['manual', 'gear', 'Add Manually', 'Enter camera connection details.', '']
 ];
 
 export const CX_LABEL: Record<string, string> = {
-  auto: 'Auto scan',
-  qr: 'QR code',
-  manual: 'Manual'
+  auto: 'Auto Scan Network',
+  qr: 'Scan QR Code',
+  manual: 'Added manually',
+  installer: 'Added by installer'
 };
+
+export const CAM_LOCS: Record<string, Record<string, string[]>> = {
+  Residence: {
+    Outdoor: ['Main gate', 'Back gate', 'Perimeter', 'Parking', 'Compound / garden', 'Other outdoor area'],
+    Indoor: ['Entrance', 'Living area', 'Corridor', 'Store room', 'Other indoor area'],
+    Rooftop: ['Rooftop']
+  },
+  Workplace: {
+    Outdoor: ['Main gate', 'Parking', 'Perimeter', 'Back door', 'Other outdoor area'],
+    Indoor: ['Reception', 'Office floor', 'Corridor', 'Server / store room', 'Other indoor area'],
+    Rooftop: ['Rooftop']
+  },
+  Facility: {
+    Outdoor: ['Main gate', 'Loading bay', 'Perimeter', 'Parking', 'Other outdoor area'],
+    Indoor: ['Warehouse floor', 'Office', 'Corridor', 'Store room', 'Other indoor area'],
+    Rooftop: ['Rooftop']
+  }
+};
+
+export const NET_FOUND = [
+  { id: 'n1', label: 'Front Gate Camera', vendor: 'Hikvision', model: 'DS-2CD2143G2', ip: '192.168.1.64', auth: true },
+  { id: 'n2', label: 'Backyard Camera', vendor: 'Dahua', model: 'IPC-HFW2431S', ip: '192.168.1.65', auth: true },
+  { id: 'n3', label: 'Entrance Camera', vendor: 'ENDRA', model: 'Cam Pro', ip: '192.168.1.71', auth: false },
+  { id: 'n4', label: '', vendor: 'Hikvision', model: 'DS-2CD2043G0', ip: '192.168.1.66', auth: true }
+];
+
+export const CAM_MODELS = ['Cam Pro', 'Cam Mini', 'Cam Outdoor'];
+export const INSTALLER_DEMO = { code: 'delta-cctv', name: 'Delta CCTV Systems', ini: 'DC' };

@@ -223,7 +223,7 @@ export const EmergencyContactsStep: React.FC = () => {
                 Relationship
               </span>
               <div className="rcs">
-                {REL_OPTS.map(r => (
+                {REL_OPTS.map((r: string) => (
                   <label key={r} className="rc rcp">
                     <input
                       type="radio"
@@ -303,7 +303,7 @@ export const EmergencyContactsStep: React.FC = () => {
         {/* Action bar */}
         <OnboardingActions
           showBack={true}
-          onBack={() => setObStep('pins')}
+          onBack={() => setObStep('cameras')}
           showSkip={contacts.length === 0}
           skipLabel="Skip for now"
           onSkip={handleSkip}
