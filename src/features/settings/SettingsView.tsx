@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { useModals } from '../../context/ModalContext';
@@ -8,6 +8,7 @@ import { FAQS } from '../../data/faqs';
 import { MAX_CONTACTS, REL_OPTS } from '../../data/onboardingData';
 import { initials } from '../../utils/formatters';
 import { normPhone, phoneOk, fmtPhone } from '../../utils/authHelpers';
+import { api, EmergencyContactResponseSchema } from '../../services/api';
 
 const SET_SECS = [
   { id: 'account', label: 'Account', icon: 'user' },
@@ -37,20 +38,73 @@ export const SettingsView: React.FC = () => {
     toast
   } = useApp();
 
-  const { account, onboardingData, updateOnboardingData } = useAuth();
+  const { account, onboardingData, updateOnboardingData, logout } = useAuth();
   const { openModal } = useModals();
 
   const activeSec = SET_SECS.some(s => s.id === route.a) ? (route.a as string) : 'account';
   const [openFaq, setOpenFaq] = useState<number | null>(null);
 
   // Contacts state
-  const contacts = onboardingData.contacts || [];
+  const [backendContacts, setBackendContacts] = useState<EmergencyContactResponseSchema[]>([]);
+  const [contactsLoading, setContactsLoading] = useState<boolean>(false);
+  const [contactsError, setContactsError] = useState<string | null>(null);
+  const [isSavingContact, setIsSavingContact] = useState<boolean>(false);
+
   const [showAddContact, setShowAddContact] = useState(false);
   const [cName, setCName] = useState('');
   const [cPhone, setCPhone] = useState('');
   const [cRel, setCRel] = useState('Spouse');
   const [cOther, setCOther] = useState('');
   const [cErr, setCErr] = useState<Record<string, string>>({});
+
+  const userId = Number(account?.userId || account?.id);
+
+  const fetchContacts = useCallback(async () => {
+    if (!userId || isNaN(userId)) return;
+    setContactsLoading(true);
+    setContactsError(null);
+    try {
+      const res = await api.getEmergencyContacts(userId);
+      setBackendContacts(Array.isArray(res) ? res : []);
+    } catch (err: any) {
+      console.warn('Failed to load emergency contacts from backend:', err);
+      setContactsError(err?.message || 'Could not load contacts from server');
+    } finally {
+      setContactsLoading(false);
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    if (activeSec === 'contacts' && userId) {
+      fetchContacts();
+    }
+  }, [activeSec, userId, fetchContacts]);
+
+  interface NormalizedContact {
+    id: number | string;
+    backendId?: number;
+    name: string;
+    phone: string;
+    rel: string;
+  }
+
+  const displayedContacts: NormalizedContact[] = useMemo(() => {
+    if (userId && backendContacts.length > 0) {
+      return backendContacts.map(c => ({
+        id: c.id,
+        backendId: c.id,
+        name: c.full_name,
+        phone: c.phone_number,
+        rel: c.relation
+      }));
+    }
+    return (onboardingData.contacts || []).map((c, i) => ({
+      id: `local-${i}`,
+      name: c.name,
+      phone: c.phone,
+      rel: c.rel
+    }));
+  }, [userId, backendContacts, onboardingData.contacts]);
 
   // App guide state
   const [appOs, setAppOs] = useState<'ios' | 'android'>('ios');
@@ -87,43 +141,85 @@ export const SettingsView: React.FC = () => {
     );
   };
 
-  const handleSaveContact = () => {
+  const handleSaveContact = async () => {
     const err: Record<string, string> = {};
     const cleanName = cName.trim().replace(/\s+/g, ' ');
     const cleanPhone = normPhone(cPhone);
 
     if (cleanName.length < 2) err.name = 'Enter their name.';
     if (!phoneOk(cleanPhone)) err.phone = 'Enter a valid Nigerian mobile number.';
-    else if (contacts.some(c => c.phone === cleanPhone)) err.phone = 'You’ve already added this number.';
+    else if (displayedContacts.some(c => c.phone === cleanPhone)) err.phone = 'You’ve already added this number.';
 
     if (Object.keys(err).length > 0) {
       setCErr(err);
       return;
     }
 
-    const nextContacts = [
-      ...contacts,
-      {
-        name: cleanName,
-        phone: cleanPhone,
-        rel: cRel === 'Other' ? cOther.trim() || 'Other' : cRel
+    const relValue = cRel === 'Other' ? cOther.trim() || 'Other' : cRel;
+
+    if (userId) {
+      setIsSavingContact(true);
+      try {
+        const created = await api.addEmergencyContact({
+          full_name: cleanName,
+          phone_number: cleanPhone,
+          relation: relValue
+        }, userId);
+        setBackendContacts(prev => [...prev, created]);
+        toast(`${cleanName} added to emergency contacts`);
+        setCName('');
+        setCPhone('');
+        setCRel('Spouse');
+        setCOther('');
+        setCErr({});
+        setShowAddContact(false);
+      } catch (saveErr: any) {
+        setCErr({ name: saveErr?.message || 'Failed to save contact on server.' });
+      } finally {
+        setIsSavingContact(false);
       }
-    ];
-    updateOnboardingData({ contacts: nextContacts });
-    setCName('');
-    setCPhone('');
-    setCRel('Spouse');
-    setCOther('');
-    setCErr({});
-    setShowAddContact(false);
-    toast(`${cleanName} added to emergency contacts`);
+    } else {
+      const nextContacts = [
+        ...(onboardingData.contacts || []),
+        {
+          name: cleanName,
+          phone: cleanPhone,
+          rel: relValue
+        }
+      ];
+      updateOnboardingData({ contacts: nextContacts });
+      setCName('');
+      setCPhone('');
+      setCRel('Spouse');
+      setCOther('');
+      setCErr({});
+      setShowAddContact(false);
+      toast(`${cleanName} added to emergency contacts`);
+    }
   };
 
-  const handleDeleteContact = (idx: number) => {
-    const c = contacts[idx];
-    const next = contacts.filter((_, i) => i !== idx);
-    updateOnboardingData({ contacts: next });
-    if (c) toast(`${c.name} removed`);
+  const handleDeleteContact = (contact: NormalizedContact) => {
+    openConfirm(
+      `Remove ${contact.name}?`,
+      'This contact will no longer be alerted when you press SOS.',
+      'Remove contact',
+      async () => {
+        if (userId && contact.backendId) {
+          try {
+            await api.deleteEmergencyContact(contact.backendId, userId);
+            setBackendContacts(prev => prev.filter(c => c.id !== contact.backendId));
+            toast(`${contact.name} removed`);
+          } catch (delErr: any) {
+            toast(delErr?.message || 'Failed to remove contact');
+          }
+        } else {
+          const next = (onboardingData.contacts || []).filter(c => c.phone !== contact.phone);
+          updateOnboardingData({ contacts: next });
+          toast(`${contact.name} removed`);
+        }
+      },
+      true
+    );
   };
 
   const setRow = (
@@ -185,7 +281,7 @@ export const SettingsView: React.FC = () => {
             type="button"
             className="nav-i"
             style={{ color: 'var(--red)' }}
-            onClick={() => setSignedOut(true)}
+            onClick={() => logout()}
           >
             <Icon name="logout" size={19} />
             <span>Log out</span>
@@ -319,12 +415,12 @@ export const SettingsView: React.FC = () => {
             <section>
               <div className="sec-hd">
                 <div>
-                  <h2>Emergency contacts · {contacts.length}</h2>
+                  <h2>Emergency contacts · {displayedContacts.length}</h2>
                   <p className="sub" style={{ marginTop: '3px' }}>
                     When you press SOS, ENDRA alerts these people along with the operators.
                   </p>
                 </div>
-                {contacts.length < MAX_CONTACTS && !showAddContact && (
+                {displayedContacts.length < MAX_CONTACTS && !showAddContact && (
                   <button
                     type="button"
                     className="btn btn-w btn-sm"
@@ -334,6 +430,29 @@ export const SettingsView: React.FC = () => {
                   </button>
                 )}
               </div>
+
+              {contactsError && (
+                <div
+                  className="alert alert-err"
+                  style={{
+                    marginBottom: '16px',
+                    padding: '12px 16px',
+                    borderRadius: '8px',
+                    background: 'rgba(239, 68, 68, 0.1)',
+                    border: '1px solid var(--red)',
+                    color: 'var(--red)',
+                    fontSize: '13px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}
+                >
+                  <span>{contactsError}</span>
+                  <button type="button" className="btn btn-sm btn-g" onClick={() => fetchContacts()}>
+                    Retry
+                  </button>
+                </div>
+              )}
 
               {showAddContact && (
                 <div className="card" style={{ marginBottom: '16px' }}>
@@ -347,6 +466,7 @@ export const SettingsView: React.FC = () => {
                       placeholder="e.g. Chidi Okonkwo"
                       onChange={e => setCName(e.target.value)}
                     />
+                    {cErr.name && <span className="fld-err">{cErr.name}</span>}
                   </div>
                   <div className="fld">
                     <label htmlFor="scPhone">Phone number</label>
@@ -360,6 +480,7 @@ export const SettingsView: React.FC = () => {
                         onChange={e => setCPhone(e.target.value)}
                       />
                     </div>
+                    {cErr.phone && <span className="fld-err">{cErr.phone}</span>}
                   </div>
                   <div className="fld">
                     <span className="lbl">Relationship</span>
@@ -379,10 +500,20 @@ export const SettingsView: React.FC = () => {
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
-                    <button type="button" className="btn btn-w" onClick={handleSaveContact}>
-                      Save contact
+                    <button
+                      type="button"
+                      className="btn btn-w"
+                      disabled={isSavingContact}
+                      onClick={handleSaveContact}
+                    >
+                      {isSavingContact ? 'Saving…' : 'Save contact'}
                     </button>
-                    <button type="button" className="btn btn-g" onClick={() => setShowAddContact(false)}>
+                    <button
+                      type="button"
+                      className="btn btn-g"
+                      disabled={isSavingContact}
+                      onClick={() => setShowAddContact(false)}
+                    >
                       Cancel
                     </button>
                   </div>
@@ -390,9 +521,13 @@ export const SettingsView: React.FC = () => {
               )}
 
               <div className="card flush list">
-                {contacts.length > 0 ? (
-                  contacts.map((c, i) => (
-                    <div key={i} className="li">
+                {contactsLoading ? (
+                  <div style={{ padding: '24px', textAlign: 'center', color: 'var(--g400)', fontSize: '13px' }}>
+                    Loading contacts…
+                  </div>
+                ) : displayedContacts.length > 0 ? (
+                  displayedContacts.map((c) => (
+                    <div key={c.id} className="li">
                       <div className="av">{initials(c.name)}</div>
                       <div className="mn">
                         <div className="t">{c.name}</div>
@@ -402,7 +537,7 @@ export const SettingsView: React.FC = () => {
                         type="button"
                         className="ibtn"
                         style={{ width: '36px', height: '36px' }}
-                        onClick={() => handleDeleteContact(i)}
+                        onClick={() => handleDeleteContact(c)}
                         aria-label={`Remove ${c.name}`}
                       >
                         <Icon name="trash" size={17} />

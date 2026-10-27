@@ -43,7 +43,7 @@ export const AuthArt: React.FC = () => {
       <div className="art-copy">
         <div className="art-h">Know the moment something’s wrong.</div>
         <p>
-          ENDRA watches your cameras, flags threats and sends a responder when you need one.
+          ENDRA watches your cameras, flags threats and alerts the people you trust when you press SOS.
         </p>
         <ul className="art-list">
           <li>
@@ -52,11 +52,11 @@ export const AuthArt: React.FC = () => {
           </li>
           <li>
             <Icon name="users" size={17} />
-            <span>Operators monitor your alerts around the clock</span>
+            <span>Your emergency contacts are alerted when you press SOS</span>
           </li>
           <li>
             <Icon name="pin" size={17} />
-            <span>Responders get your live location when you press SOS</span>
+            <span>112, state and federal emergency numbers are one tap away</span>
           </li>
         </ul>
       </div>
@@ -66,7 +66,7 @@ export const AuthArt: React.FC = () => {
 
 export const AuthLayout: React.FC = () => {
   const { authView, setAuthView } = useAuth();
-  const { effectiveTheme, toggleTheme, toast } = useApp();
+  const { effectiveTheme, toggleTheme, toast, go } = useApp();
 
   if (authView === 'start') {
     return <LandingView />;
@@ -115,23 +115,29 @@ export const AuthLayout: React.FC = () => {
           </div>
 
           <div className="auth-card">
-            {authView === 'login' && (
+            {(authView === 'signup' || authView === 'login') && (
               <div className="tabs full" role="tablist" aria-label="Account">
                 <button
                   type="button"
                   role="tab"
-                  aria-selected={false}
-                  className="tab"
-                  onClick={() => setAuthView('signup')}
+                  aria-selected={authView === 'signup'}
+                  className={`tab ${authView === 'signup' ? 'on' : ''}`}
+                  onClick={() => {
+                    setAuthView('signup');
+                    go('signup');
+                  }}
                 >
                   Create account
                 </button>
                 <button
                   type="button"
                   role="tab"
-                  aria-selected={true}
-                  className="tab on"
-                  onClick={() => setAuthView('login')}
+                  aria-selected={authView === 'login'}
+                  className={`tab ${authView === 'login' ? 'on' : ''}`}
+                  onClick={() => {
+                    setAuthView('login');
+                    go('login');
+                  }}
                 >
                   Log in
                 </button>

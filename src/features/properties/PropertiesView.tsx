@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
 import { useModals } from '../../context/ModalContext';
 import { Icon } from '../../components/icons/Icon';
 import { roleTone, plural } from '../../utils/formatters';
+import { api } from '../../services/api';
 
 export const PropertiesView: React.FC = () => {
   const {
@@ -17,6 +19,7 @@ export const PropertiesView: React.FC = () => {
     toast
   } = useApp();
 
+  const { account } = useAuth();
   const { openModal } = useModals();
 
   const [activePlaceMenu, setActivePlaceMenu] = useState<{ id: string; rect: DOMRect } | null>(null);
@@ -40,7 +43,16 @@ export const PropertiesView: React.FC = () => {
       `Remove ${p?.name}?`,
       'The property and its devices will be removed from your account.',
       'Remove property',
-      () => {
+      async () => {
+        const uid = Number(account?.userId || account?.id);
+        if (id.startsWith('prop-') && uid) {
+          const numId = Number(id.replace('prop-', ''));
+          try {
+            await api.deleteProperty(numId, uid);
+          } catch (err: any) {
+            console.warn('Failed to delete property on backend:', err);
+          }
+        }
         setPlaces(prev => prev.filter(x => x.id !== id));
         if (currentPlaceId === id) {
           const next = places.find(x => x.id !== id);

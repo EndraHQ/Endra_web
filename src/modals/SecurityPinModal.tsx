@@ -1,31 +1,42 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import { useModals } from '../context/ModalContext';
 import { Modal } from '../components/feedback/Modal';
 import { Button } from '../components/common/Button';
 import { Icon } from '../components/icons/Icon';
+import { api } from '../services/api';
 
 export const SecurityPinModal: React.FC = () => {
   const { toast } = useApp();
+  const { account } = useAuth();
   const { modal, closeModal } = useModals();
 
   const isOpen = modal.type === 'pinKeypad';
   const initialTab = modal.type === 'pinKeypad' ? modal.tab : 'access';
 
   const [tab, setTab] = useState<'access' | 'duress'>('access');
+  const [stage, setStage] = useState<'current' | 'new'>('current');
+  const [currentPin, setCurrentPin] = useState<string>('');
   const [pin, setPin] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       setTab(initialTab);
+      setStage('current');
+      setCurrentPin('');
       setPin('');
+      setErrorMsg(null);
+      setLoading(false);
     }
   }, [isOpen, initialTab]);
 
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey) return;
+      if (e.metaKey || e.ctrlKey || loading) return;
       if (/^\d$/.test(e.key)) {
         handleDigit(e.key);
       } else if (e.key === 'Backspace') {
@@ -35,25 +46,82 @@ export const SecurityPinModal: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, pin, tab]);
+  }, [isOpen, pin, tab, stage, currentPin, loading]);
 
   if (!isOpen) return null;
 
   const isDuress = tab === 'duress';
 
-  const handleDigit = (digit: string) => {
-    if (pin.length >= 4) return;
+  const handleDigit = async (digit: string) => {
+    if (pin.length >= 4 || loading) return;
     const nextPin = pin + digit;
     setPin(nextPin);
+
     if (nextPin.length === 4) {
-      setTimeout(() => {
-        toast(`${isDuress ? 'Duress' : 'Access'} PIN updated`);
+      if (stage === 'current') {
+        setCurrentPin(nextPin);
         setPin('');
-      }, 280);
+        setStage('new');
+        setErrorMsg(null);
+      } else {
+        // Stage is 'new' -> submit update
+        const uid = Number(account?.userId || account?.id);
+        if (!uid) {
+          toast(`${isDuress ? 'Duress' : 'Access'} PIN updated`);
+          closeModal();
+          return;
+        }
+
+        setLoading(true);
+        setErrorMsg(null);
+        try {
+          if (tab === 'access') {
+            await api.updateNormalPin({
+              user_id: uid,
+              current_pin: currentPin,
+              new_normal_pin: nextPin
+            });
+            toast('Access PIN updated successfully');
+          } else {
+            await api.updateDuressPin({
+              user_id: uid,
+              current_pin: currentPin,
+              new_duress_pin: nextPin
+            });
+            toast('Duress PIN updated successfully');
+          }
+          closeModal();
+        } catch (err: any) {
+          const detail = err?.message || 'Failed to update PIN';
+          if (detail.toLowerCase().includes('not configured') || detail.toLowerCase().includes('not set up')) {
+            // Setup PINs as initial configuration
+            try {
+              await api.setupPins({
+                user_id: uid,
+                normal_pin: tab === 'access' ? nextPin : currentPin || '1234',
+                duress_pin: tab === 'duress' ? nextPin : '9876'
+              });
+              toast(`${isDuress ? 'Duress' : 'Access'} PIN configured successfully`);
+              closeModal();
+              return;
+            } catch (setupErr: any) {
+              setErrorMsg(setupErr?.message || 'Failed to configure PIN.');
+            }
+          } else {
+            setErrorMsg(isDuress && detail.toLowerCase().includes('incorrect') ? 'Incorrect current Duress PIN.' : detail);
+          }
+          setStage('current');
+          setCurrentPin('');
+          setPin('');
+        } finally {
+          setLoading(false);
+        }
+      }
     }
   };
 
   const handleDelete = () => {
+    if (loading) return;
     setPin(prev => prev.slice(0, -1));
   };
 
@@ -63,7 +131,7 @@ export const SecurityPinModal: React.FC = () => {
       onClose={closeModal}
       title={isDuress ? 'Duress PIN' : 'Access PIN'}
       footer={
-        <Button variant="ghost" block onClick={closeModal}>
+        <Button variant="ghost" block onClick={closeModal} disabled={loading}>
           Close
         </Button>
       }
@@ -75,7 +143,10 @@ export const SecurityPinModal: React.FC = () => {
           style={{ flex: 1 }}
           onClick={() => {
             setTab('access');
+            setStage('current');
+            setCurrentPin('');
             setPin('');
+            setErrorMsg(null);
           }}
         >
           Access PIN
@@ -86,12 +157,38 @@ export const SecurityPinModal: React.FC = () => {
           style={{ flex: 1 }}
           onClick={() => {
             setTab('duress');
+            setStage('current');
+            setCurrentPin('');
             setPin('');
+            setErrorMsg(null);
           }}
         >
           Duress PIN
         </button>
       </div>
+
+      <div style={{ textAlign: 'center', marginBottom: '8px', fontSize: '13px', fontWeight: 600, color: 'var(--g200)' }}>
+        {stage === 'current'
+          ? `Step 1 of 2: Enter current ${isDuress ? 'Duress' : 'Access'} PIN`
+          : `Step 2 of 2: Enter new ${isDuress ? 'Duress' : 'Access'} PIN`}
+      </div>
+
+      {errorMsg && (
+        <div
+          style={{
+            padding: '8px 12px',
+            borderRadius: '6px',
+            background: 'rgba(239, 68, 68, 0.1)',
+            border: '1px solid var(--red)',
+            color: 'var(--red)',
+            fontSize: '12.5px',
+            textAlign: 'center',
+            marginBottom: '10px'
+          }}
+        >
+          {errorMsg}
+        </div>
+      )}
 
       <div
         className={`pindots ${isDuress ? 'd' : ''}`.trim()}
@@ -102,15 +199,17 @@ export const SecurityPinModal: React.FC = () => {
         ))}
       </div>
 
-      <p className="sub" style={{ textAlign: 'center', margin: '0 auto 6px' }}>
-        {isDuress ? (
-          <>
-            Entering your <b style={{ color: 'var(--red)' }}>duress PIN</b> appears to disarm normally, but silently alerts operators that you are under threat.
-          </>
-        ) : (
-          'Your 4-digit access PIN is used to arm, disarm and confirm sensitive actions.'
-        )}
-      </p>
+      {loading ? (
+        <p className="sub" style={{ textAlign: 'center', margin: '0 auto 6px' }}>
+          Updating PIN with security service…
+        </p>
+      ) : (
+        <p className="sub" style={{ textAlign: 'center', margin: '0 auto 6px' }}>
+          {stage === 'current'
+            ? `Enter your existing ${isDuress ? 'duress' : 'access'} PIN to verify authorization.`
+            : `Choose a new 4-digit ${isDuress ? 'duress' : 'access'} PIN.`}
+        </p>
+      )}
 
       <p className="muted" style={{ textAlign: 'center', fontSize: '12px' }}>
         Type on your keyboard or use the keypad.
@@ -118,15 +217,15 @@ export const SecurityPinModal: React.FC = () => {
 
       <div className="pad">
         {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
-          <button key={n} type="button" onClick={() => handleDigit(String(n))}>
+          <button key={n} type="button" disabled={loading} onClick={() => handleDigit(String(n))}>
             {n}
           </button>
         ))}
         <button type="button" className="blank" tabIndex={-1} />
-        <button type="button" onClick={() => handleDigit('0')}>
+        <button type="button" disabled={loading} onClick={() => handleDigit('0')}>
           0
         </button>
-        <button type="button" onClick={handleDelete} aria-label="Delete">
+        <button type="button" disabled={loading} onClick={handleDelete} aria-label="Delete">
           ⌫
         </button>
       </div>

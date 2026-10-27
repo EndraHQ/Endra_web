@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useApp } from '../../context/AppContext';
 import { Icon } from '../../components/icons/Icon';
 
 export const ForgotPasswordView: React.FC = () => {
   const { forgotPassword, setAuthView } = useAuth();
+  const { go } = useApp();
   const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -22,7 +24,7 @@ export const ForgotPasswordView: React.FC = () => {
   };
 
   return (
-    <div>
+    <>
       <h1 id="gH" tabIndex={-1}>
         Reset your password
       </h1>
@@ -73,11 +75,14 @@ export const ForgotPasswordView: React.FC = () => {
         <button
           type="button"
           className="linkb"
-          onClick={() => setAuthView('login')}
+          onClick={() => {
+            setAuthView('login');
+            go('login');
+          }}
         >
           Back to log in
         </button>
       </p>
-    </div>
+    </>
   );
 };

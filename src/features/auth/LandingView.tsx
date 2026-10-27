@@ -7,7 +7,7 @@ import { FeedCanvas } from '../../components/media/FeedCanvas';
 import { normPhone, phoneOk } from '../../utils/authHelpers';
 
 export const LandingView: React.FC = () => {
-  const { setAuthView, signup, loginSample } = useAuth();
+  const { setAuthView, signup } = useAuth();
   const { effectiveTheme, toggleTheme, toast, go } = useApp();
   const [identifier, setIdentifier] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -188,9 +188,6 @@ export const LandingView: React.FC = () => {
         </button>
         <button type="button" onClick={() => toast('Terms of service are available in the live product')}>
           Terms
-        </button>
-        <button type="button" onClick={loginSample}>
-          Explore a sample portal
         </button>
       </footer>
     </div>

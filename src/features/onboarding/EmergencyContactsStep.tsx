@@ -77,12 +77,12 @@ export const EmergencyContactsStep: React.FC = () => {
 
   const handleContinue = () => {
     markStepComplete('contacts', contacts.length ? 'done' : 'skipped');
-    setObStep('alerts');
+    setObStep('use');
   };
 
   const handleSkip = () => {
     markStepComplete('contacts', 'skipped');
-    setObStep('alerts');
+    setObStep('use');
   };
 
   return (
@@ -93,15 +93,19 @@ export const EmergencyContactsStep: React.FC = () => {
         </span>
         <div>
           <h1 id="gH" tabIndex={-1}>
-            Who can we contact in an emergency?
+            Add your emergency contacts
           </h1>
           <p className="sub">
-            When you press SOS, ENDRA alerts these people along with the operators.
+            People ENDRA alerts the moment you trigger SOS.
           </p>
         </div>
       </header>
 
       <div className="onb-fm">
+        <div className="note" style={{ marginBottom: '16px' }}>
+          <b>Who should ENDRA alert when you need help?</b> Your selected contacts will receive an SOS alert when you activate an emergency. Add up to {MAX_CONTACTS} people you trust, ideally at least 3.
+        </div>
+
         {/* Saved Contacts List */}
         {contacts.length > 0 && (
           <div>
@@ -303,9 +307,9 @@ export const EmergencyContactsStep: React.FC = () => {
         {/* Action bar */}
         <OnboardingActions
           showBack={true}
-          onBack={() => setObStep('cameras')}
+          onBack={() => setObStep('safety')}
           showSkip={contacts.length === 0}
-          skipLabel="Skip for now"
+          skipLabel="Skip, I’ll add contacts later"
           onSkip={handleSkip}
           continueLabel="Continue"
           onContinue={handleContinue}
