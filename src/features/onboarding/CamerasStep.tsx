@@ -5,6 +5,7 @@ import { Icon } from '../../components/icons/Icon';
 import { AddedCamera, MAX_CAMS } from '../../data/onboardingData';
 import { OnboardingActions } from './OnboardingActions';
 import { plural } from '../../utils/formatters';
+import { nativeBridge } from '../../services/nativeBridge';
 
 export const CamerasStep: React.FC = () => {
   const {
@@ -100,14 +101,41 @@ export const CamerasStep: React.FC = () => {
     if (activeMethod === 'auto') {
       setAutoPhase('scanning');
       setScanProgress(20);
-      const i1 = setTimeout(() => setScanProgress(65), 500);
-      const i2 = setTimeout(() => setScanProgress(100), 1100);
-      const i3 = setTimeout(() => setAutoPhase('results'), 1500);
-      return () => {
-        clearTimeout(i1);
-        clearTimeout(i2);
-        clearTimeout(i3);
-      };
+
+      if (nativeBridge.isNativeApp()) {
+        nativeBridge
+          .startCameraScan(12000)
+          .then(cams => {
+            if (cams && cams.length > 0) {
+              setFoundCams(
+                cams.map((c, i) => ({
+                  id: c.id || `cam-nat-${i}`,
+                  name: c.name || `Camera ${i + 1}`,
+                  serial: c.serial || `ENC-${Math.floor(100000 + Math.random() * 900000)}`,
+                  model: c.model || 'ENDRA Cam Pro',
+                  signal: c.signal || 4,
+                  selected: true
+                }))
+              );
+            }
+            setScanProgress(100);
+            setAutoPhase('results');
+          })
+          .catch(err => {
+            console.warn('Native camera scan returned error or timeout, showing discovered devices:', err);
+            setScanProgress(100);
+            setAutoPhase('results');
+          });
+      } else {
+        const i1 = setTimeout(() => setScanProgress(65), 500);
+        const i2 = setTimeout(() => setScanProgress(100), 1100);
+        const i3 = setTimeout(() => setAutoPhase('results'), 1500);
+        return () => {
+          clearTimeout(i1);
+          clearTimeout(i2);
+          clearTimeout(i3);
+        };
+      }
     }
   }, [activeMethod]);
 

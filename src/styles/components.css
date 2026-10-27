@@ -3088,3 +3088,66 @@ textarea.in {
   color: var(--g400);
 }
 
+/* Setup Checklist Card (Complete your ENDRA setup) */
+.setupc {
+  margin-bottom: 20px;
+}
+
+.setuplist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.setupi {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+  padding: 13px 14px;
+  border: 1px solid var(--g800);
+  border-radius: 14px;
+  background: var(--g850);
+  color: var(--white);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.setupi:hover {
+  background: var(--g800);
+  border-color: var(--g700);
+}
+
+.setupi .ico {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: var(--g800);
+  display: grid;
+  place-items: center;
+  color: var(--g200);
+  flex-shrink: 0;
+}
+
+.setupi .mn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.setupi .mn b {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--white);
+}
+
+.setupi .s {
+  font-size: 12.5px;
+  color: var(--g400);
+  margin-top: 2px;
+}
+
+

@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useApp } from '../../context/AppContext';
 import { Icon } from '../../components/icons/Icon';
 import { SAMPLE } from '../../data/onboardingData';
 
 export const LoginView: React.FC = () => {
-  const { login, loginSample, setAuthView } = useAuth();
+  const { login, setAuthView } = useAuth();
+  const { go } = useApp();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -33,7 +35,7 @@ export const LoginView: React.FC = () => {
   };
 
   return (
-    <div>
+    <>
       <h1 id="gH" tabIndex={-1}>
         Welcome back
       </h1>
@@ -69,7 +71,10 @@ export const LoginView: React.FC = () => {
               type="button"
               className="linkb mut"
               style={{ fontSize: '13px' }}
-              onClick={() => setAuthView('forgot')}
+              onClick={() => {
+                setAuthView('forgot');
+                go('forgot');
+              }}
             >
               Forgot password?
             </button>
@@ -117,19 +122,16 @@ export const LoginView: React.FC = () => {
         <button
           type="button"
           className="linkb"
-          onClick={() => setAuthView('signup')}
+          onClick={() => {
+            setAuthView('signup');
+            go('signup');
+          }}
         >
           Create an account
         </button>
       </p>
 
-      <button
-        type="button"
-        className="linkb mut prev-link"
-        onClick={loginSample}
-      >
-        Just exploring? Open the sample portal
-      </button>
-    </div>
+
+    </>
   );
 };

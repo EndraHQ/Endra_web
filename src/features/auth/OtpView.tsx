@@ -6,10 +6,12 @@ import { fmtPhone } from '../../utils/authHelpers';
 import { OB_STEPS } from '../../data/onboardingData';
 
 export const OtpView: React.FC = () => {
-  const { signupData, verifyOtp, setAuthView } = useAuth();
-  const { toast } = useApp();
+  const { signupData, verifyOtp, resendOtp, setAuthView } = useAuth();
+  const { toast, go } = useApp();
   const [digits, setDigits] = useState<string[]>(['', '', '', '', '', '']);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(() =>
+    signupData?.phone ? null : 'Signup details are unavailable. Return to signup and request a new code.'
+  );
   const [loading, setLoading] = useState(false);
   const [resend, setResend] = useState(30);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -82,13 +84,21 @@ export const OtpView: React.FC = () => {
     inputRefs.current[targetIdx]?.focus();
   };
 
-  const handleResendCode = () => {
-    setResend(30);
-    toast('A new code has been sent');
+  const handleResendCode = async () => {
+    setError(null);
+    const res = await resendOtp();
+    if (res.ok) {
+      setResend(30);
+      toast(res.message || 'Verification code request accepted.');
+    } else {
+      setError(res.error || 'Failed to resend code.');
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
+
     const code = digits.join('');
     if (!/^\d{6}$/.test(code)) {
       setError('Enter all 6 digits of the code.');
@@ -97,45 +107,39 @@ export const OtpView: React.FC = () => {
 
     setLoading(true);
     setError(null);
-    const ok = await verifyOtp(code);
+    const res = await verifyOtp(code);
     setLoading(false);
 
-    if (!ok) {
-      setError('Invalid verification code.');
+    if (res.ok) {
+      go('welcome');
+      return;
+    }
+
+    if (!res.ok) {
+      setError(res.error || 'Invalid verification code.');
     }
   };
 
-  const formattedPhone = signupData?.phone ? fmtPhone(signupData.phone) : '+234 803 415 9920';
+  const formattedPhone = signupData?.phone ? fmtPhone(signupData.phone) : 'your phone number';
 
   return (
-    <div>
-      {/* 10-step progress bar before setup rail */}
-      <div className="acprog" role="img" aria-label={`Step 2 of ${OB_STEPS.length}: Verify Phone`}>
-        <div className="segs">
-          {OB_STEPS.map((_, i) => (
-            <i key={i} className={i < 2 ? 'on' : ''} />
-          ))}
-        </div>
-        <div className="lab">
-          <span>Step 02 of {OB_STEPS.length}</span>
-          <span>{OB_STEPS[1].t}</span>
-        </div>
-      </div>
-
+    <>
       <button
         type="button"
-        className="linkb"
-        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginBottom: '14px', fontSize: '13.5px' }}
-        onClick={() => setAuthView('signup')}
+        className="backlink"
+        onClick={() => {
+          setAuthView('signup');
+          go('signup');
+        }}
       >
         <Icon name="chevl" size={14} /> Edit details
       </button>
-
+      <div className="kick">Step 1 of 5 · Verify your phone</div>
       <h1 id="gH" tabIndex={-1}>
         Verify your phone number
       </h1>
       <p className="sub">
-        Enter the 6-digit code we sent to <b>{formattedPhone}</b>.
+        Enter the 6-digit code for <b>{formattedPhone}</b>.
       </p>
 
       <form onSubmit={handleSubmit} noValidate>
@@ -166,7 +170,7 @@ export const OtpView: React.FC = () => {
         )}
 
         <div className="note" style={{ margin: '12px 0 20px' }}>
-          Preview only: no SMS is sent. Enter any 6 digits to continue.
+          We’ll continue only after ENDRA confirms this code. If delivery is unavailable, request a new code or return to signup.
         </div>
 
         <button className="btn btn-w btn-lg btn-block" type="submit" disabled={loading}>
@@ -188,6 +192,6 @@ export const OtpView: React.FC = () => {
           </>
         )}
       </p>
-    </div>
+    </>
   );
 };

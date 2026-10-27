@@ -1,23 +1,36 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
 import { Icon } from '../../components/icons/Icon';
 import { PLANS, PLAN_FEATURES, planById } from '../../data/onboardingData';
+import { api, UserSubscriptionStatusResponseSchema } from '../../services/api';
 
 export const PlansView: React.FC = () => {
-  const { onboardingData, updateOnboardingData } = useAuth();
+  const { account, onboardingData, updateOnboardingData } = useAuth();
   const { route, go, toast } = useApp();
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
   const [selectedPlanId, setSelectedPlanId] = useState<string>(onboardingData.plan || 'plus');
   const [showDowngradeModal, setShowDowngradeModal] = useState<boolean>(false);
   const [pendingPlanId, setPendingPlanId] = useState<string | null>(null);
   const [selectedKeptCams, setSelectedKeptCams] = useState<string[]>([]);
+  const [, setSubStatus] = useState<UserSubscriptionStatusResponseSchema | null>(null);
+  const [paymentLoading, setPaymentLoading] = useState<boolean>(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+
+  const userId = Number(account?.userId || account?.id);
+
+  useEffect(() => {
+    if (!userId || isNaN(userId)) return;
+    api.getSubscriptionStatus(userId)
+      .then(res => setSubStatus(res))
+      .catch(err => console.warn('Could not fetch subscription status:', err));
+  }, [userId]);
 
   const isFromApp = route.query?.from === 'app';
   const currentPlan = planById(onboardingData.plan || 'plus');
   const totalCams = onboardingData.cams?.length || 4;
 
-  const handleSelectPlan = (tierId: string) => {
+  const handleSelectPlan = async (tierId: string) => {
     if (tierId === currentPlan.id) {
       toast(`You are already on the ${currentPlan.name} plan`);
       return;
@@ -32,10 +45,29 @@ export const PlansView: React.FC = () => {
       return;
     }
 
-    // Direct upgrade or valid switch
-    updateOnboardingData({ plan: tierId });
-    setSelectedPlanId(tierId);
-    toast(`Subscription updated to ${targetPlan.name} (${billingCycle})`);
+    if (userId) {
+      setPaymentLoading(true);
+      setPaymentError(null);
+      const targetTier = tierId === 'free' ? 'free' : tierId === 'pro' ? 'premium' : 'basic';
+      const amount = tierId === 'free' ? 0 : tierId === 'pro' ? 25000 : 10000;
+      try {
+        const res = await api.initiatePayment(userId, { target_tier: targetTier, amount });
+        if (res.checkout_url) {
+          window.location.href = res.checkout_url;
+          return;
+        }
+        toast(`Plan switch initiated: ${res.message || 'Processing'}`);
+      } catch (err: any) {
+        setPaymentError(err?.message || 'Payment gateway is currently unavailable on the server. Please contact support.');
+      } finally {
+        setPaymentLoading(false);
+      }
+    } else {
+      // Direct upgrade or valid switch
+      updateOnboardingData({ plan: tierId });
+      setSelectedPlanId(tierId);
+      toast(`Subscription updated to ${targetPlan.name} (${billingCycle})`);
+    }
   };
 
   const confirmDowngrade = () => {
@@ -94,6 +126,32 @@ export const PlansView: React.FC = () => {
       </div>
 
       {/* Current Plan Overview Card */}
+      {paymentError && (
+        <div
+          className="alert alert-err"
+          style={{
+            margin: '0 0 20px',
+            padding: '12px 16px',
+            borderRadius: '8px',
+            background: 'rgba(239, 68, 68, 0.1)',
+            border: '1px solid var(--red)',
+            color: 'var(--red)',
+            fontSize: '13px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}
+        >
+          <span>{paymentError}</span>
+          <button
+            type="button"
+            className="btn btn-sm btn-g"
+            onClick={() => setPaymentError(null)}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
       <div className="current-plan-card">
         <div className="plan-meta-left">
           <span className="badge success">Active Plan</span>

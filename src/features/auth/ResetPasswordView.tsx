@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useApp } from '../../context/AppContext';
 import { Icon } from '../../components/icons/Icon';
 import { pwScore } from '../../utils/authHelpers';
 
 export const ResetPasswordView: React.FC = () => {
   const { resetPassword, setAuthView } = useAuth();
+  const { go } = useApp();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -31,7 +33,7 @@ export const ResetPasswordView: React.FC = () => {
   };
 
   return (
-    <div>
+    <>
       <h1 id="gH" tabIndex={-1}>
         Set a new password
       </h1>
@@ -125,11 +127,14 @@ export const ResetPasswordView: React.FC = () => {
         <button
           type="button"
           className="linkb"
-          onClick={() => setAuthView('login')}
+          onClick={() => {
+            setAuthView('login');
+            go('login');
+          }}
         >
           Cancel
         </button>
       </p>
-    </div>
+    </>
   );
 };

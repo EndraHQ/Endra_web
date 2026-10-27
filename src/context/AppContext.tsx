@@ -28,6 +28,8 @@ import {
   buildDeviceList
 } from '../data/mockData';
 import { parseDur } from '../utils/formatters';
+import { api, DailySummary } from '../services/api';
+import { useAuth } from './AuthContext';
 
 interface PlaybackState {
   cam: number;
@@ -51,6 +53,9 @@ interface RecordingState {
 
 interface SosState {
   start: number;
+  dispatchId?: string;
+  etaMinutes?: number;
+  responderUnit?: string;
 }
 
 interface ClipPlayerState {
@@ -143,6 +148,9 @@ interface AppContextType {
   // SOS State
   sosState: SosState | null;
   activateSos: () => void;
+  sosDispatching: boolean;
+  sosError: string | null;
+  cancelSosWithPin: (pin: string) => Promise<{ success: boolean; isDuress?: boolean; message?: string }>;
   cancelSos: () => void;
   quickAlert: (type: 'silent' | 'med' | 'fire' | 'guard') => void;
 
@@ -164,9 +172,32 @@ interface AppContextType {
 
   // Ask ENDRA
   askRun: (query: string) => void;
+
+  // Dashboard Live Data & Status
+  dashboardSummary: DailySummary | null;
+  dashboardLoading: boolean;
+  dashboardError: string | null;
+  cameraInventoryStatus: 'idle' | 'loading' | 'ready' | 'error';
+  setupInventoryStatus: 'idle' | 'loading' | 'ready' | 'error';
+  emergencyContactsCount: number;
+  refreshDashboardData: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
+
+export const EMPTY_PLACE: Place = {
+  id: 'none',
+  name: 'No Property Configured',
+  type: 'Residence',
+  loc: 'Add a property to start monitoring',
+  role: 'Owner',
+  ig: 'home',
+  cams: 0,
+  camsOn: 0,
+  assets: 0,
+  devices: 0,
+  devOn: 0
+};
 
 function parsePath(hashPath: string): RouteState {
   const clean = hashPath.replace(/^#\/?/, '') || 'start';
@@ -203,7 +234,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const clean = newPath.replace(/^#\/?/, '');
     setPath(clean);
     try {
-      window.history.pushState(null, '', `#/${clean}`);
+      window.location.hash = `#/${clean}`;
     } catch {}
     window.scrollTo(0, 0);
   }, []);
@@ -302,11 +333,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Active Property
   const [currentPlaceId, setCurrentPlaceId] = useState<string>('home');
-  const [places, setPlaces] = useState<Place[]>(INITIAL_PLACES);
-  const [connected, setConnected] = useState<ConnectedPlace[]>(INITIAL_CONNECTED);
+  const [places, setPlaces] = useState<Place[]>([]);
+  const [connected, setConnected] = useState<ConnectedPlace[]>([]);
 
   const currentPlace = useMemo(() => {
-    return places.find(p => p.id === currentPlaceId) || places[0];
+    return places.find(p => p.id === currentPlaceId) || places[0] || EMPTY_PLACE;
   }, [places, currentPlaceId]);
 
   const setPlace = useCallback((id: string) => {
@@ -315,20 +346,212 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     toast(`Switched to ${p ? p.name : id}`);
   }, [places, toast]);
 
-  // Datasets
-  const [household, setHousehold] = useState<HouseholdMember[]>(INITIAL_HOUSEHOLD);
-  const [guests, setGuests] = useState<GuestPass[]>(INITIAL_GUESTS);
-  const [user, setUser] = useState<UserProfile>(INITIAL_USER);
-  const [settings, setSettings] = useState<UserSettings>(INITIAL_SETTINGS);
-  const [events, setEvents] = useState<SecurityEvent[]>(INITIAL_EVENTS);
-  const [threads, setThreads] = useState<ChatThread[]>(INITIAL_THREADS);
-  const [faceReg, setFaceReg] = useState<EnrolledFace[]>(INITIAL_FACEREG);
-  const [camNames, setCamNames] = useState<string[]>(INITIAL_CAM_NAMES);
-  const [camZones, setCamZones] = useState<string[]>(INITIAL_CAM_ZONE);
+  const { stage, account } = useAuth();
 
+  // Datasets
+  const [household, setHousehold] = useState<HouseholdMember[]>([]);
+  const [guests, setGuests] = useState<GuestPass[]>([]);
+  const [user, setUser] = useState<UserProfile>(() => ({
+    name: account?.name || 'Resident',
+    phone: account?.phone || '',
+    email: account?.email || '',
+    faceEnrolled: false,
+    faceQuality: 0,
+    faceTemplate: null,
+    govIdVerified: false,
+    govIdType: '',
+    govIdPending: false,
+    plan: account?.ob?.data?.plan === 'plus' ? 'ENDRA Plus' : account?.ob?.data?.plan === 'standard' ? 'ENDRA Standard' : 'ENDRA Free'
+  }));
+
+  useEffect(() => {
+    if (account) {
+      setUser(prev => ({
+        ...prev,
+        name: account.name || prev.name,
+        phone: account.phone || prev.phone,
+        email: account.email || prev.email,
+        plan: account.ob?.data?.plan === 'plus' ? 'ENDRA Plus' : account.ob?.data?.plan === 'standard' ? 'ENDRA Standard' : 'ENDRA Free'
+      }));
+    }
+  }, [account]);
+
+  // Dashboard Live Data & Status
+  const [dashboardSummary, setDashboardSummary] = useState<DailySummary | null>(null);
+  const [dashboardLoading, setDashboardLoading] = useState<boolean>(false);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const [cameraInventoryStatus, setCameraInventoryStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [setupInventoryStatus, setSetupInventoryStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [emergencyContactsCount, setEmergencyContactsCount] = useState(0);
+  const dashboardRefreshId = React.useRef(0);
+
+  const refreshDashboardData = useCallback(async () => {
+    if (stage !== 'portal') return;
+    const refreshId = ++dashboardRefreshId.current;
+    setDashboardLoading(true);
+    setDashboardError(null);
+    setCameraInventoryStatus(prev => prev === 'ready' ? prev : 'loading');
+    setSetupInventoryStatus(prev => prev === 'ready' ? prev : 'loading');
+
+    try {
+      const userId = account?.userId || account?.id;
+      const [summaryRes, camerasRes, threadsRes, propertiesRes, contactsRes] = await Promise.allSettled([
+        api.getDashboardSummary(),
+        api.getCameras(),
+        api.getChatThreads(),
+        userId ? api.getProperties(userId) : Promise.resolve(null),
+        userId ? api.getEmergencyContacts(userId) : Promise.resolve(null)
+      ]);
+
+      if (refreshId !== dashboardRefreshId.current) return;
+
+      if (summaryRes.status === 'fulfilled' && summaryRes.value) {
+        setDashboardSummary(summaryRes.value);
+        if (summaryRes.value.recent_events && summaryRes.value.recent_events.length > 0) {
+          const mappedEvents: SecurityEvent[] = summaryRes.value.recent_events.map((e) => ({
+            day: 'Today',
+            type: e.threat_level === 'High' ? 'incident' : 'ai',
+            dot: e.threat_level === 'High' ? 'var(--red)' : 'var(--blue)',
+            t: e.type || 'Security Event',
+            title: e.type || 'Security Event',
+            s: `${e.zone || 'Monitored Area'} · Threat level: ${e.threat_level}`,
+            time: e.timestamp ? new Date(e.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recently',
+            dur: '~1 min',
+            cam: e.zone || 'Camera 1',
+            obj: e.type || 'Object',
+            conf: Math.round((e.confidence_score || 0.9) * 100),
+            rec: 'Review footage and verify status.'
+          }));
+          setEvents(prev => [...mappedEvents, ...prev.filter(x => !mappedEvents.some(m => m.t === x.t))]);
+        }
+      } else if (summaryRes.status === 'rejected') {
+        console.warn('Dashboard summary error:', summaryRes.reason);
+        setDashboardError(summaryRes.reason?.message || 'Unable to sync dashboard live summary.');
+      }
+
+      if (camerasRes.status === 'fulfilled' && Array.isArray(camerasRes.value)) {
+        const realCameras = camerasRes.value;
+        if (realCameras.length === 0) {
+          // An empty global inventory proves there are no cameras to attribute.
+          setRealCameras([]);
+          setCameraInventoryStatus('ready');
+          setCamNames([]);
+          setCamZones([]);
+        } else {
+          // The documented endpoint is an unscoped "List All Cameras" API.
+          // Do not present global hardware as belonging to this account.
+          setRealCameras([]);
+          setCameraInventoryStatus('error');
+          setCamNames([]);
+          setCamZones([]);
+          setDashboardError('Camera inventory is unavailable because the backend does not provide an account-scoped camera list.');
+        }
+      } else {
+        setCameraInventoryStatus(prev => prev === 'ready' ? prev : 'error');
+        setDashboardError(camerasRes.status === 'rejected'
+          ? camerasRes.reason?.message || 'Unable to load camera inventory.'
+          : 'Unable to load camera inventory.');
+      }
+
+      const realCameras = (
+        camerasRes.status === 'fulfilled' &&
+        Array.isArray(camerasRes.value) &&
+        camerasRes.value.length === 0
+      ) ? camerasRes.value : [];
+
+      if (threadsRes.status === 'fulfilled' && Array.isArray(threadsRes.value) && threadsRes.value.length > 0) {
+        const mappedThreads: ChatThread[] = threadsRes.value.map((t) => {
+          const isCmd = t.recipient_group.toLowerCase().includes('command');
+          return {
+            nm: t.recipient_group,
+            role: isCmd ? 'Command & Dispatch' : 'On-Site Security',
+            av: isCmd ? 'CC' : t.recipient_group.slice(0, 2).toUpperCase(),
+            cmd: isCmd,
+            unread: t.unread_count || 0,
+            time: t.last_activity ? new Date(t.last_activity).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Today',
+            last: t.last_message || 'No messages yet',
+            msgs: t.last_message ? [
+              {
+                f: 'them',
+                t: t.last_message,
+                tm: t.last_activity ? new Date(t.last_activity).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Earlier'
+              }
+            ] : []
+          };
+        });
+        setThreads(mappedThreads);
+      }
+
+      if (propertiesRes.status === 'fulfilled' && contactsRes.status === 'fulfilled' && propertiesRes.value && contactsRes.value) {
+        const apiProps = propertiesRes.value.properties || [];
+        setEmergencyContactsCount(contactsRes.value.length);
+        setSetupInventoryStatus('ready');
+        const mappedPlaces: Place[] = apiProps.map((p: any) => ({
+          id: `prop-${p.id}`,
+          name: p.property_name || 'My Home',
+          type: p.property_type === 'commercial' ? 'Workplace' : 'Residence',
+          loc: p.full_address || 'Lagos, Nigeria',
+          role: 'Owner',
+          ig: p.property_type === 'commercial' ? 'building' : 'home',
+          cams: realCameras.length,
+          camsOn: realCameras.filter((c: any) => c.status === 'ONLINE' || c.is_active).length,
+          assets: 0,
+          devices: realCameras.length,
+          devOn: realCameras.filter((c: any) => c.status === 'ONLINE' || c.is_active).length
+        }));
+        setPlaces(mappedPlaces);
+        setCurrentPlaceId(prev => (prev === 'home' && mappedPlaces[0] ? mappedPlaces[0].id : prev));
+      } else {
+        setSetupInventoryStatus(prev => prev === 'ready' ? prev : 'error');
+        setDashboardError(
+          propertiesRes.status === 'rejected'
+            ? propertiesRes.reason?.message || 'Unable to load property setup data.'
+            : contactsRes.status === 'rejected'
+              ? contactsRes.reason?.message || 'Unable to load emergency contacts.'
+              : 'Unable to load setup data.'
+        );
+      }
+    } catch (err: any) {
+      if (refreshId !== dashboardRefreshId.current) return;
+      console.warn('Dashboard data fetch error:', err);
+      setDashboardError(err?.message || 'Failed to refresh dashboard data.');
+    } finally {
+      if (refreshId === dashboardRefreshId.current) {
+        setDashboardLoading(false);
+      }
+    }
+  }, [stage, account?.id, account?.userId]);
+
+  useEffect(() => {
+    if (stage === 'portal') {
+      refreshDashboardData();
+    }
+    return () => {
+      dashboardRefreshId.current += 1;
+    };
+  }, [stage, refreshDashboardData]);
+
+  const [settings, setSettings] = useState<UserSettings>(INITIAL_SETTINGS);
+  const [events, setEvents] = useState<SecurityEvent[]>([]);
+  const [threads, setThreads] = useState<ChatThread[]>([]);
+  const [faceReg, setFaceReg] = useState<EnrolledFace[]>([]);
+  const [camNames, setCamNames] = useState<string[]>([]);
+  const [camZones, setCamZones] = useState<string[]>([]);
+
+  const [realCameras, setRealCameras] = useState<any[]>([]);
   const devices = useMemo(() => {
-    return buildDeviceList(currentPlace, camNames, camZones);
-  }, [currentPlace, camNames, camZones]);
+    if (!realCameras || realCameras.length === 0) return [];
+    return realCameras.map((c, i) => ({
+      k: 'camera' as const,
+      ico: '📷',
+      name: c.camera_name || ('Camera ' + (i + 1)),
+      id: c.id || ('cam-' + (i + 1)),
+      zone: c.assigned_zone || 'Default Zone',
+      status: (c.status === 'ONLINE' || c.is_active ? 'online' : 'offline') as any,
+      live: Boolean(c.status === 'ONLINE' || c.is_active),
+      ci: i
+    }));
+  }, [realCameras]);
 
   // Filter & Monitor State
   const [monView, setMonView] = useState<'grid' | 'list'>('grid');
@@ -383,17 +606,116 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [toast]);
 
   // SOS
-  const [sosState, setSosState] = useState<SosState | null>(null);
+  const [sosState, setSosState] = useState<SosState | null>(() => {
+    try {
+      const saved = sessionStorage.getItem('endra.activeSos');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return null;
+  });
+  const [sosDispatching, setSosDispatching] = useState<boolean>(false);
+  const [sosError, setSosError] = useState<string | null>(null);
 
-  const activateSos = useCallback(() => {
-    setSosState({ start: Date.now() });
-    toast('SOS sent — operators and contacts alerted');
-  }, [toast]);
+  const activateSos = useCallback(async () => {
+    setSosDispatching(true);
+    setSosError(null);
+
+    const getGeo = (): Promise<{ lat: number; lng: number }> => {
+      return new Promise((resolve) => {
+        if (typeof navigator !== 'undefined' && navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+            (err) => {
+              console.warn('Geolocation unavailable, falling back:', err);
+              resolve({ lat: 6.4474, lng: 3.4723 });
+            },
+            { timeout: 6000, enableHighAccuracy: true, maximumAge: 60000 }
+          );
+        } else {
+          resolve({ lat: 6.4474, lng: 3.4723 });
+        }
+      });
+    };
+
+    const coords = await getGeo();
+    const userId = String(account?.userId || account?.id || '');
+    if (!userId) {
+      setSosDispatching(false);
+      setSosError('No authenticated user session found for emergency dispatch.');
+      toast('Login required to trigger emergency SOS');
+      return;
+    }
+
+    try {
+      const res = await api.triggerSos({
+        user_id: userId,
+        current_lat: coords.lat,
+        current_lng: coords.lng,
+        notes: 'Emergency SOS alert triggered from ENDRA web console.'
+      });
+
+      const state: SosState = {
+        start: Date.now(),
+        dispatchId: res.dispatch_id,
+        etaMinutes: res.estimated_eta_minutes,
+        responderUnit: res.responder_unit
+      };
+      setSosState(state);
+      try {
+        sessionStorage.setItem('endra.activeSos', JSON.stringify(state));
+      } catch {}
+      toast(`Emergency SOS dispatched — ${res.responder_unit || 'Operators alerted'}`);
+    } catch (err: any) {
+      console.error('SOS dispatch failure:', err);
+      const msg = err?.message || 'Emergency dispatch failed to connect to server. Call 112 immediately!';
+      setSosError(msg);
+      toast(msg);
+    } finally {
+      setSosDispatching(false);
+    }
+  }, [account, toast]);
 
   const cancelSos = useCallback(() => {
     setSosState(null);
-    toast('Emergency cancelled');
+    try { sessionStorage.removeItem('endra.activeSos'); } catch {}
+    toast('Emergency alert cancelled');
   }, [toast]);
+
+  const cancelSosWithPin = useCallback(async (pin: string): Promise<{ success: boolean; isDuress?: boolean; message?: string }> => {
+    const userId = Number(account?.userId || account?.id);
+    if (!userId) {
+      return { success: false, message: 'User identity not found.' };
+    }
+
+    try {
+      const res = await api.verifySosPin({
+        user_id: userId,
+        pin_entered: pin
+      });
+
+      if (res.is_duress) {
+        setSosState(null);
+        try { sessionStorage.removeItem('endra.activeSos'); } catch {}
+        toast('Emergency disarmed.');
+        return { success: true, isDuress: true, message: 'Duress signal transmitted silently to command center.' };
+      }
+
+      if (res.status === 'verified_normal_pin' || res.status === 'valid' || res.status === 'SUCCESS' || res.status === 'approved') {
+        setSosState(null);
+        try { sessionStorage.removeItem('endra.activeSos'); } catch {}
+        toast('Emergency cancelled successfully');
+        return {
+          success: true,
+          isDuress: false,
+          message: 'PIN verified. Emergency cancelled on device. Note: Response personnel may already be dispatched; contact the command center or call 112 if immediate confirmation is required.'
+        };
+      }
+
+      return { success: false, message: 'Incorrect security PIN. Emergency remains active.' };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Verification failed. Please retry.' };
+    }
+  }, [account, toast]);
 
   // Confirmation dialog state
   const [confirmState, setConfirmState] = useState<ConfirmState>({
@@ -585,6 +907,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       start: 'Know your property is safe',
       login: 'Log in',
       signup: 'Create your account',
+      otp: 'Verify your phone number',
+      forgot: 'Reset your password',
       welcome: 'Set up ENDRA',
       home: 'Home',
       monitor: 'Monitor',
@@ -656,6 +980,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     recordingState,
     toggleRecording,
     sosState,
+    sosDispatching,
+    sosError,
+    cancelSosWithPin,
     activateSos,
     cancelSos,
     quickAlert,
@@ -669,7 +996,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     confirmState,
     openConfirm,
     closeConfirm,
-    askRun
+    askRun,
+    dashboardSummary,
+    dashboardLoading,
+    dashboardError,
+    cameraInventoryStatus,
+    setupInventoryStatus,
+    emergencyContactsCount,
+    refreshDashboardData
   }), [
     route,
     path,
@@ -708,6 +1042,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     recordingState,
     toggleRecording,
     sosState,
+    sosDispatching,
+    sosError,
+    cancelSosWithPin,
     activateSos,
     cancelSos,
     quickAlert,
@@ -719,7 +1056,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     confirmState,
     openConfirm,
     closeConfirm,
-    askRun
+    askRun,
+    dashboardSummary,
+    dashboardLoading,
+    dashboardError,
+    cameraInventoryStatus,
+    setupInventoryStatus,
+    emergencyContactsCount,
+    refreshDashboardData
   ]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

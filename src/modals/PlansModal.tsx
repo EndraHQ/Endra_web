@@ -4,23 +4,43 @@ import { useAuth } from '../context/AuthContext';
 import { Modal } from '../components/feedback/Modal';
 import { Icon } from '../components/icons/Icon';
 import { PLANS, PLAN_FEATURES } from '../data/onboardingData';
+import { api } from '../services/api';
 
 export const PlansModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
 }> = ({ isOpen, onClose }) => {
   const { user, setUser, toast } = useApp();
-  const { updateOnboardingData } = useAuth();
+  const { account, updateOnboardingData } = useAuth();
   const [selectedPlanId, setSelectedPlanId] = useState<string>(
     user.plan === 'ENDRA Free' ? 'free' : user.plan === 'ENDRA Standard' ? 'standard' : 'plus'
   );
 
-  const handleSelectPlan = (id: string, name: string) => {
+  const handleSelectPlan = async (id: string, name: string) => {
     setSelectedPlanId(id);
-    setUser(prev => ({ ...prev, plan: name }));
-    updateOnboardingData({ plan: id });
-    toast(`Plan changed to ${name}`);
-    onClose();
+    const userId = Number(account?.userId || account?.id);
+    if (userId) {
+      const targetTier = id === 'free' ? 'free' : id === 'pro' ? 'premium' : 'basic';
+      const amount = id === 'free' ? 0 : id === 'pro' ? 25000 : 10000;
+      try {
+        const res = await api.initiatePayment(userId, { target_tier: targetTier, amount });
+        if (res.checkout_url) {
+          window.location.href = res.checkout_url;
+          return;
+        }
+        toast(`Plan switch initiated: ${res.message || 'Processing'}`);
+        setUser(prev => ({ ...prev, plan: name }));
+        updateOnboardingData({ plan: id });
+        onClose();
+      } catch (err: any) {
+        toast(err?.message || 'Payment gateway currently unavailable on server.');
+      }
+    } else {
+      setUser(prev => ({ ...prev, plan: name }));
+      updateOnboardingData({ plan: id });
+      toast(`Plan changed to ${name}`);
+      onClose();
+    }
   };
 
   return (

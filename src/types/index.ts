@@ -8,6 +8,8 @@ export type RouteName =
   | 'start'
   | 'login'
   | 'signup'
+  | 'otp'
+  | 'forgot'
   | 'welcome'
   | 'home'
   | 'monitor'

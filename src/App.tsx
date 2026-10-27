@@ -1,5 +1,6 @@
+import { Logo } from './components/icons/Logo';
 import React, { useEffect } from 'react';
-import { useAuth } from './context/AuthContext';
+import { useAuth, store } from './context/AuthContext';
 import { useApp } from './context/AppContext';
 import { useModals } from './context/ModalContext';
 import { resolveIntent } from './utils/intentResolver';
@@ -20,12 +21,14 @@ import { SettingsView } from './features/settings/SettingsView';
 const PORTAL_ROUTES = ['home', 'monitor', 'activity', 'messages', 'sos', 'properties', 'access', 'plans', 'settings'];
 
 export const AppContent: React.FC = () => {
-  const { stage, setStage, authView, setAuthView, pendingIntent, savePendingIntent, consumePendingIntent } = useAuth();
+  const { stage, setStage, authView, setAuthView, account, pendingIntent, savePendingIntent, consumePendingIntent, isValidatingSession } = useAuth();
   const { route, go } = useApp();
   const { openModal } = useModals();
 
   // Smart Entry Route & Route-Stage Synchronization Handler
   useEffect(() => {
+    if (isValidatingSession) return;
+
     // 1. Handle direct arrival on canonical smart-entry route #/open
     if (route.name === 'open') {
       const targetIntent = route.query?.intent;
@@ -73,6 +76,15 @@ export const AppContent: React.FC = () => {
 
     // 3. Root entry normalization: / or /#/ or #/start
     if (route.name === 'start') {
+      if (account?.ob?.done && stage === 'portal') {
+        go('home');
+        return;
+      }
+      if (account && stage === 'onboarding') {
+        go('welcome');
+        return;
+      }
+
       if (stage !== 'auth') setStage('auth');
       if (authView !== 'start') setAuthView('start');
       try {
@@ -85,6 +97,17 @@ export const AppContent: React.FC = () => {
 
     // 4. Auth routes synchronization
     if (route.name === 'login') {
+      // A successful login can commit account/stage state before the hash
+      // update is observed. Preserve that authenticated in-memory transition
+      // instead of resetting it back to the public auth stage.
+      if (account && stage === 'portal') {
+        go('home');
+        return;
+      }
+      if (account && stage === 'onboarding') {
+        go('welcome');
+        return;
+      }
       if (stage !== 'auth') setStage('auth');
       if (authView !== 'login') setAuthView('login');
       return;
@@ -96,25 +119,60 @@ export const AppContent: React.FC = () => {
       return;
     }
 
+    if (route.name === 'otp') {
+      if (stage !== 'auth') setStage('auth');
+      if (authView !== 'otp') setAuthView('otp');
+      return;
+    }
+
+    if (route.name === 'forgot') {
+      if (stage !== 'auth') setStage('auth');
+      if (authView !== 'forgot') setAuthView('forgot');
+      return;
+    }
+
     if (route.name === 'welcome') {
+      if (account?.ob?.done && stage === 'portal') {
+        go('home');
+        return;
+      }
       if (stage !== 'onboarding') setStage('onboarding');
       return;
     }
 
-    // 5. Portal routes access guard: if not in portal stage, redirect to #/start
+    // 5. Portal routes access guard: strict protection
     if (PORTAL_ROUTES.includes(route.name)) {
-      if (stage !== 'portal') {
-        setStage('auth');
-        setAuthView('start');
-        go('start');
-        try {
-          window.history.replaceState(null, '', '#/start');
-        } catch {}
+      if (stage !== 'portal' || !account) {
+        if (account?.ob?.done && stage === 'portal') {
+          // Allowed
+        } else if (account && stage === 'onboarding') {
+          go('welcome');
+        } else {
+          setStage('auth');
+          setAuthView('start');
+          go('start');
+          try {
+            window.history.replaceState(null, '', '#/start');
+          } catch {}
+        }
       }
     }
-  }, [route.name, route.query, stage, authView, setStage, setAuthView, go, openModal, pendingIntent, savePendingIntent, consumePendingIntent]);
+  }, [route.name, route.query, stage, setStage, setAuthView, go, openModal, pendingIntent, savePendingIntent, consumePendingIntent, account, isValidatingSession]);
 
-  if (stage === 'auth') {
+  if (isValidatingSession) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+          <Logo height={32} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--g400)', fontSize: '13px' }}>
+            <span className="spinline" /> Verifying session…
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (stage === 'auth' || !account) {
     return (
       <>
         <AuthLayout />

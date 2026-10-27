@@ -1,11 +1,13 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useApp } from '../../context/AppContext';
 
 export const ForgotSentView: React.FC = () => {
   const { setAuthView } = useAuth();
+  const { go } = useApp();
 
   return (
-    <div>
+    <>
       <h1 id="gH" tabIndex={-1}>
         Check your inbox
       </h1>
@@ -20,7 +22,9 @@ export const ForgotSentView: React.FC = () => {
       <button
         type="button"
         className="btn btn-w btn-lg btn-block"
-        onClick={() => setAuthView('reset')}
+        onClick={() => {
+          setAuthView('reset');
+        }}
       >
         Open reset link (preview)
       </button>
@@ -29,11 +33,14 @@ export const ForgotSentView: React.FC = () => {
         <button
           type="button"
           className="linkb"
-          onClick={() => setAuthView('login')}
+          onClick={() => {
+            setAuthView('login');
+            go('login');
+          }}
         >
           Back to log in
         </button>
       </p>
-    </div>
+    </>
   );
 };

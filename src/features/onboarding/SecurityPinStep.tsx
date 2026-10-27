@@ -262,7 +262,7 @@ export const SecurityPinStep: React.FC = () => {
 
             <OnboardingActions
               showBack={true}
-              onBack={() => setObStep('face')}
+              onBack={handleBack}
               continueLabel="Continue"
               onContinue={handleContinue}
               continueType="button"

@@ -1,6 +1,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
 import { useModals } from '../../context/ModalContext';
 import { Icon } from '../icons/Icon';
 import { initials, actTone } from '../../utils/formatters';
@@ -10,21 +11,45 @@ export const UserMenu: React.FC<{
   onClose: () => void;
   anchorRect: DOMRect | null;
 }> = ({ isOpen, onClose, anchorRect }) => {
-  const { user, go, setSignedOut } = useApp();
+  const { user, go } = useApp();
+  const { logout } = useAuth();
+  const menuRef = React.useRef<HTMLDivElement>(null);
+  const [pos, setPos] = React.useState<{ left: number; top: number; width?: number }>({
+    left: anchorRect?.left || 10,
+    top: anchorRect ? Math.max(10, anchorRect.top - 410) : 10
+  });
+
+  React.useLayoutEffect(() => {
+    if (!menuRef.current || !anchorRect) return;
+    const w = menuRef.current.offsetWidth || Math.max(240, anchorRect.width);
+    const h = menuRef.current.offsetHeight || 410;
+    let x = anchorRect.left;
+    let y = anchorRect.bottom + 8;
+    if (y + h > window.innerHeight - 10) {
+      y = Math.max(10, anchorRect.top - h - 8);
+    }
+    x = Math.max(10, Math.min(x, window.innerWidth - w - 10));
+    setPos({ left: x, top: y, width: Math.max(anchorRect.width, 240) });
+  }, [anchorRect, isOpen]);
 
   if (!isOpen || !anchorRect) return null;
-
-  const style: React.CSSProperties = {
-    left: `${Math.max(10, Math.min(anchorRect.left, window.innerWidth - 250))}px`,
-    top: `${Math.max(10, anchorRect.top - 200)}px`
-  };
 
   return createPortal(
     <>
       <div className="menu-backdrop" style={{ position: 'fixed', inset: 0, zIndex: 410 }} onClick={onClose} />
-      <div className="menu" style={style}>
+      <div
+        ref={menuRef}
+        className="menu"
+        style={{
+          left: `${pos.left}px`,
+          top: `${pos.top}px`,
+          width: pos.width ? `${pos.width}px` : undefined,
+          minWidth: '240px'
+        }}
+      >
         <div className="mh">{user.name}</div>
         <button
+          type="button"
           onClick={() => {
             onClose();
             go('settings/account');
@@ -33,6 +58,7 @@ export const UserMenu: React.FC<{
           <Icon name="user" size={18} /> My account
         </button>
         <button
+          type="button"
           onClick={() => {
             onClose();
             go('settings/notifications');
@@ -41,6 +67,7 @@ export const UserMenu: React.FC<{
           <Icon name="bell" size={18} /> Notifications
         </button>
         <button
+          type="button"
           onClick={() => {
             onClose();
             go('settings/contacts');
@@ -49,6 +76,7 @@ export const UserMenu: React.FC<{
           <Icon name="phone" size={18} /> Emergency contacts
         </button>
         <button
+          type="button"
           onClick={() => {
             onClose();
             go('settings/app');
@@ -57,6 +85,7 @@ export const UserMenu: React.FC<{
           <Icon name="mobile" size={18} /> Get the mobile app
         </button>
         <button
+          type="button"
           onClick={() => {
             onClose();
             go('plans');
@@ -65,6 +94,7 @@ export const UserMenu: React.FC<{
           <Icon name="card" size={18} /> Plans
         </button>
         <button
+          type="button"
           onClick={() => {
             onClose();
             go('settings/preferences');
@@ -73,6 +103,7 @@ export const UserMenu: React.FC<{
           <Icon name="gear" size={18} /> Preferences
         </button>
         <button
+          type="button"
           onClick={() => {
             onClose();
             go('settings/help');
@@ -82,10 +113,11 @@ export const UserMenu: React.FC<{
         </button>
         <hr />
         <button
+          type="button"
           style={{ color: 'var(--red)' }}
           onClick={() => {
             onClose();
-            setSignedOut(true);
+            logout();
           }}
         >
           <Icon name="logout" size={18} /> Log out

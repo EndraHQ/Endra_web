@@ -16,8 +16,8 @@ export const OnboardingComplete: React.FC = () => {
   const cams = d.cams || [];
   const pl = planById(d.plan || 'plus');
   const I = account?.installer;
-  const email = account?.email || 'adaeze@example.com';
-  const phone = account?.phone || '+234 803 415 9920';
+  const email = account?.email || '';
+  const phone = account?.phone || '';
 
   const handleFinish = () => {
     setOpening(true);

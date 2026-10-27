@@ -6,17 +6,23 @@ export interface OnboardingStepMeta {
 }
 
 export const OB_STEPS: OnboardingStepMeta[] = [
-  { id: 'account', t: 'Create Account', d: 'Your details', lock: true },
-  { id: 'verify', t: 'Verify Phone', d: 'Confirm your number', lock: true },
-  { id: 'property', t: 'Your Property', d: 'Location and basic details' },
-  { id: 'pins', t: 'Security PIN', d: 'PIN and duress PIN' },
-  { id: 'face', t: 'Confirm Your Identity', d: 'Face verification' },
-  { id: 'cameras', t: 'Add Cameras', d: 'Connect and test' },
-  { id: 'contacts', t: 'Emergency Contacts', d: 'Who we can call' },
-  { id: 'alerts', t: 'Alerts & Notifications', d: 'Preferences and zones' },
-  { id: 'plans', t: 'Choose Plan', d: 'Compare and choose' },
-  { id: 'review', t: 'Review & Activate', d: 'Check and go live' }
+  { id: 'account', t: 'Create account', d: 'Name, phone and password' },
+  { id: 'safety', t: 'Safety profile', d: 'PIN, duress PIN and face' },
+  { id: 'contacts', t: 'Emergency contacts', d: 'Who ENDRA alerts in an SOS' },
+  { id: 'use', t: 'What to protect', d: 'Tell us what matters most' },
+  { id: 'activate', t: 'Activate ENDRA', d: 'Review and go' }
 ];
+
+export const USE_ROWS: [string, string, string][] = [
+  ['me', 'Me personally', 'Personal safety, SOS and alerts wherever you are'],
+  ['home', 'My home', 'Your house, flat or compound'],
+  ['business', 'My business', 'An office, shop or workplace'],
+  ['community', 'My community / campus', 'An estate, school, church or campus'],
+  ['cameras', 'My security cameras', 'Cameras you already have, or plan to add']
+];
+
+export const useLabel = (a: string[]): string[] =>
+  (a || []).map(k => (USE_ROWS.find(r => r[0] === k) || ['', k])[1]);
 
 export const PLAN_FEATURES: [string, string][] = [
   ['live', 'Live camera view'],
@@ -133,6 +139,7 @@ export interface OnboardingData {
   };
   face: {
     enrolled?: boolean;
+    skipped?: boolean;
     tmpl?: string;
     at?: number;
   };
@@ -150,6 +157,7 @@ export interface OnboardingData {
   zonePick: Record<string, boolean> | null;
   zoneSeen: string[];
   zoneCustom: string[];
+  use: string[];
   plan: string;
   planOk: boolean;
   installerCode?: string;
@@ -184,8 +192,9 @@ export const defaultOnboardingData = (): OnboardingData => ({
   zonePick: null,
   zoneSeen: [],
   zoneCustom: [],
-  plan: 'plus',
-  planOk: false,
+  use: [],
+  plan: 'free',
+  planOk: true,
   instChecked: false
 });
 
@@ -220,30 +229,45 @@ export const NG_STATES = [
 
 export const ONB_ICON: Record<string, string> = {
   account: 'user',
+  safety: 'key',
+  contacts: 'users',
+  use: 'shield',
+  activate: 'check',
+  ready: 'check',
   verify: 'phone',
   property: 'building',
   cameras: 'cam',
   face: 'scan',
   pins: 'key',
-  contacts: 'users',
   alerts: 'bell',
   plans: 'card',
-  review: 'check',
-  ready: 'check'
+  review: 'check'
 };
 
 export const ONB_WHY: Record<string, { t: string; p?: string; ul?: string[]; ol?: string[] }> = {
+  safety: {
+    t: 'Two PINs, two jobs',
+    p: 'Your PIN arms and disarms the system. The duress PIN looks identical to anyone watching, but quietly alerts ENDRA that you’re under threat.'
+  },
+  use: {
+    t: 'Why we ask',
+    p: 'This helps ENDRA suggest what to set up next. You don’t need any cameras to use ENDRA, and you can change this anytime.'
+  },
+  activate: {
+    t: 'What happens next',
+    p: 'Your dashboard opens with a short checklist: add your place, cameras and notifications at your own pace.'
+  },
+  contacts: {
+    t: 'What happens when you press SOS',
+    ol: [
+      'Your emergency contacts are alerted',
+      'Your location is logged',
+      'You can call 112 or another number'
+    ]
+  },
   property: {
     t: 'Why we ask',
     p: 'Your property type and location help ENDRA suggest where to place cameras and which areas to watch.'
-  },
-  pins: {
-    t: 'Two PINs, two jobs',
-    p: 'Your PIN arms and disarms the system. The duress PIN looks identical to anyone watching, but quietly alerts operators. Both are required.'
-  },
-  face: {
-    t: 'Your privacy',
-    p: 'ENDRA keeps an encrypted template of your face, not a photo. It confirms you’re the account owner and lets gates recognise you.'
   },
   cameras: {
     t: 'Before you start',
@@ -253,13 +277,13 @@ export const ONB_WHY: Record<string, { t: string; p?: string; ul?: string[]; ol?
       'You have any camera logins to hand'
     ]
   },
-  contacts: {
-    t: 'What happens when you press SOS',
-    ol: [
-      'Operators are notified',
-      'Your live location is shared',
-      'Your emergency contacts are alerted'
-    ]
+  face: {
+    t: 'Your privacy',
+    p: 'ENDRA keeps an encrypted template of your face, not a photo. It confirms you’re the account owner and lets gates recognise you.'
+  },
+  pins: {
+    t: 'Two PINs, two jobs',
+    p: 'Your PIN arms and disarms the system. The duress PIN looks identical to anyone watching, but quietly alerts operators.'
   },
   alerts: {
     t: 'Priority zones',

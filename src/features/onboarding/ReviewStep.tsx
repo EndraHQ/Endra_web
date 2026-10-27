@@ -1,251 +1,183 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Icon } from '../../components/icons/Icon';
-import { planById, ONB_ICON } from '../../data/onboardingData';
+import { useLabel } from '../../data/onboardingData';
+import { plural } from '../../utils/formatters';
+import { fmtPhone } from '../../utils/authHelpers';
 
 export const ReviewStep: React.FC = () => {
-  const { onboardingData, setObStep, markStepComplete, completeOnboarding } = useAuth();
+  const {
+    account,
+    signupData,
+    onboardingData,
+    setObStep,
+    isActivating,
+    activateOnboarding
+  } = useAuth();
+  const [activationError, setActivationError] = useState<string | null>(null);
+  const activationInFlight = useRef(false);
 
-  const handleFinish = () => {
-    markStepComplete('review', 'done');
-    completeOnboarding();
+  const handleFinish = async () => {
+    if (isActivating || activationInFlight.current) return;
+    activationInFlight.current = true;
+    setActivationError(null);
+    try {
+      const result = await activateOnboarding();
+      if (!result.ok) {
+        const failedStep = Object.values(result.report?.steps || {}).find(
+          s => s.status === 'blocked' || s.status === 'failed'
+        );
+        setActivationError(
+          failedStep?.message || 'Activation could not be completed. Please check your connection and try again.'
+        );
+      }
+    } catch (err: any) {
+      setActivationError(err?.message || 'An unexpected error occurred during activation.');
+    } finally {
+      activationInFlight.current = false;
+    }
   };
 
-  const selectedPlan = onboardingData.plan ? planById(onboardingData.plan) : planById('plus');
-  const camsCount = onboardingData.cams?.length || 0;
-  const contactsCount = onboardingData.contacts?.length || 0;
+  const handleBack = () => {
+    setObStep('use');
+  };
 
-  return (
-    <div className="onb-pane" id="p-review">
-      <div className="onb-hd">
-        <span className="onb-pill">
-          <Icon name={ONB_ICON.review || 'check'} size={14} />
-          Step 10 · Review & Confirm
-        </span>
-        <h1>Review your setup</h1>
-        <p>Confirm your configuration details below. You can update any of these settings at any time from your portal.</p>
-      </div>
+  const contacts = onboardingData.contacts || [];
+  const faceOk = Boolean(onboardingData.face && onboardingData.face.enrolled);
 
-      <div className="onb-summary-list">
-        {/* 1. Property Details */}
-        <div className="onb-summary-card">
-          <div className="onb-summary-hd">
-            <div className="onb-summary-title">
-              <Icon name="home" size={18} />
-              <b>Property Details</b>
-            </div>
-            <button
-              type="button"
-              className="onb-edit-btn"
-              onClick={() => setObStep('property')}
-            >
-              Edit
-            </button>
-          </div>
-          <div className="onb-summary-body">
-            <div className="onb-kv">
-              <span>Name</span>
-              <b>{onboardingData.pname || 'Main Residence'}</b>
-            </div>
-            <div className="onb-kv">
-              <span>Type & Role</span>
-              <b>{onboardingData.type || 'Residential'} · {onboardingData.role || 'Owner'}</b>
-            </div>
-            <div className="onb-kv">
-              <span>Address</span>
-              <b>{onboardingData.address ? `${onboardingData.address}, ${onboardingData.area || ''}, ${onboardingData.state || 'Lagos'}` : 'Lagos, Nigeria'}</b>
-            </div>
-          </div>
-        </div>
+  const rawPhone = account?.phone || signupData?.phone || '';
+  const formattedPhone = rawPhone ? fmtPhone(rawPhone) : '';
+  const userAccountShown = account?.email || formattedPhone || 'Account details';
 
-        {/* 2. Security PINs */}
-        <div className="onb-summary-card">
-          <div className="onb-summary-hd">
-            <div className="onb-summary-title">
-              <Icon name="key" size={18} />
-              <b>Security & Duress PINs</b>
-            </div>
-            <button
-              type="button"
-              className="onb-edit-btn"
-              onClick={() => setObStep('pins')}
-            >
-              Edit
-            </button>
-          </div>
-          <div className="onb-summary-body">
-            <div className="onb-kv">
-              <span>Access PIN</span>
-              <b className="mono">••••</b>
-            </div>
-            <div className="onb-kv">
-              <span>Duress Silent PIN</span>
-              <b className="mono">{onboardingData.pins?.duress ? '•••• (Configured)' : 'Not set'}</b>
-            </div>
-          </div>
-        </div>
-
-        {/* 3. Face ID Enrolment */}
-        <div className="onb-summary-card">
-          <div className="onb-summary-hd">
-            <div className="onb-summary-title">
-              <Icon name="user" size={18} />
-              <b>Face Recognition</b>
-            </div>
-            <button
-              type="button"
-              className="onb-edit-btn"
-              onClick={() => setObStep('face')}
-            >
-              Edit
-            </button>
-          </div>
-          <div className="onb-summary-body">
-            <div className="onb-kv">
-              <span>Primary Face Profile</span>
-              <b>{onboardingData.face?.enrolled ? 'Enrolled & Verified' : 'Skipped (Set up later)'}</b>
-            </div>
-          </div>
-        </div>
-
-        {/* 4. Cameras */}
-        <div className="onb-summary-card">
-          <div className="onb-summary-hd">
-            <div className="onb-summary-title">
-              <Icon name="camera" size={18} />
-              <b>Connected Cameras</b>
-            </div>
-            <button
-              type="button"
-              className="onb-edit-btn"
-              onClick={() => setObStep('cameras')}
-            >
-              Edit
-            </button>
-          </div>
-          <div className="onb-summary-body">
-            <div className="onb-kv">
-              <span>Linked Devices</span>
-              <b>{camsCount > 0 ? `${camsCount} camera${camsCount === 1 ? '' : 's'} ready` : 'No cameras added yet'}</b>
-            </div>
-            {camsCount > 0 && (
-              <div className="onb-cam-pills">
-                {onboardingData.cams?.map((c, i) => (
-                  <span key={i} className="onb-cam-pill">
-                    <Icon name="camera" size={12} />
-                    {c.name} ({c.zone})
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* 5. Emergency Contacts */}
-        <div className="onb-summary-card">
-          <div className="onb-summary-hd">
-            <div className="onb-summary-title">
-              <Icon name="phone" size={18} />
-              <b>Emergency Contacts</b>
-            </div>
-            <button
-              type="button"
-              className="onb-edit-btn"
-              onClick={() => setObStep('contacts')}
-            >
-              Edit
-            </button>
-          </div>
-          <div className="onb-summary-body">
-            <div className="onb-kv">
-              <span>Dispatch Contacts</span>
-              <b>{contactsCount > 0 ? `${contactsCount} contact${contactsCount === 1 ? '' : 's'} registered` : 'None registered'}</b>
-            </div>
-            {contactsCount > 0 && (
-              <div className="onb-contact-pills">
-                {onboardingData.contacts?.map((ct, idx) => (
-                  <span key={idx} className="onb-contact-pill">
-                    <b>{ct.name}</b> ({ct.rel || 'Family'}) · {ct.phone}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* 6. Alert Preferences & Guard Locations */}
-        <div className="onb-summary-card">
-          <div className="onb-summary-hd">
-            <div className="onb-summary-title">
-              <Icon name="bell" size={18} />
-              <b>Alert Preferences & Locations</b>
-            </div>
-            <button
-              type="button"
-              className="onb-edit-btn"
-              onClick={() => setObStep('alerts')}
-            >
-              Edit
-            </button>
-          </div>
-          <div className="onb-summary-body">
-            <div className="onb-kv">
-              <span>Push Notifications</span>
-              <b>{onboardingData.alerts?.notifPush !== false ? 'Enabled' : 'Disabled'}</b>
-            </div>
-            <div className="onb-kv">
-              <span>Incident Alerts</span>
-              <b>{onboardingData.alerts?.notifIncident !== false ? 'Enabled' : 'Disabled'}</b>
-            </div>
-            <div className="onb-kv">
-              <span>System Updates</span>
-              <b>{onboardingData.alerts?.notifSystem !== false ? 'Enabled' : 'Disabled'}</b>
-            </div>
-          </div>
-        </div>
-
-        {/* 7. Selected Plan */}
-        <div className="onb-summary-card plan-highlight">
-          <div className="onb-summary-hd">
-            <div className="onb-summary-title">
-              <Icon name="shield" size={18} />
-              <b>Subscription Plan</b>
-            </div>
-            <button
-              type="button"
-              className="onb-edit-btn"
-              onClick={() => setObStep('plans')}
-            >
-              Change
-            </button>
-          </div>
-          <div className="onb-summary-body">
-            <div className="onb-kv">
-              <span>Selected Tier</span>
-              <b className="plan-name-tag">{selectedPlan.name}</b>
-            </div>
-            <div className="onb-kv">
-              <span>Pricing</span>
-              <b>{selectedPlan.price} / month</b>
-            </div>
-            <div className="onb-kv">
-              <span>Camera Capacity</span>
-              <b>Up to {selectedPlan.cams} cameras included</b>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="onb-act" style={{ marginTop: '32px' }}>
+  const row = (
+    ico: string,
+    k: string,
+    v: string,
+    sub?: string,
+    step?: string
+  ) => (
+    <div className="sumrow" key={k}>
+      <span className="si" aria-hidden="true">
+        <Icon name={ico} size={19} strokeWidth={1.6} />
+      </span>
+      <span className="k">{k}</span>
+      <span className="v">
+        {v}
+        {sub && <small>{sub}</small>}
+      </span>
+      {step ? (
         <button
           type="button"
-          className="btn primary lg full-w"
-          onClick={handleFinish}
+          className="e"
+          onClick={() => setObStep(step)}
+          aria-label={`Edit ${k}`}
         >
-          <Icon name="check" size={18} />
-          Complete Setup & Launch ENDRA
+          Edit
         </button>
-      </div>
+      ) : null}
     </div>
+  );
+
+  return (
+    <>
+      <header className="onb-hd">
+        <span className="onb-ic" aria-hidden="true">
+          <Icon name="check" size={24} strokeWidth={1.6} />
+        </span>
+        <div>
+          <h1 id="gH" tabIndex={-1}>
+            Your ENDRA setup
+          </h1>
+          <p className="sub">
+            Here’s what’s ready. You’ll finish the rest from your dashboard.
+          </p>
+        </div>
+      </header>
+
+      <div className="onb-fm">
+        <div className="sumlist">
+          {/* Row 1: Account created */}
+          {row('user', 'Account created', account?.name || signupData?.name || 'Your Account', userAccountShown)}
+
+          {/* Row 2: Safety PIN */}
+          {row(
+            'key',
+            'Safety PIN',
+            onboardingData.pins && onboardingData.pins.access ? 'Configured' : 'Not set',
+            onboardingData.pins && onboardingData.pins.duress ? 'PIN and duress PIN set' : '',
+            'safety'
+          )}
+
+          {/* Row 3: Emergency contacts */}
+          {row(
+            'users',
+            'Emergency contacts',
+            contacts.length ? plural(contacts.length, 'contact') : 'Not added',
+            contacts.length
+              ? 'Alerted in an SOS: ' + contacts.map(c => c.name.split(' ')[0]).join(', ')
+              : 'Add contacts so SOS has someone to alert',
+            'contacts'
+          )}
+
+          {/* Row 4: Face profile */}
+          {row(
+            'scan',
+            'Face profile',
+            faceOk ? 'Configured' : 'Skipped',
+            faceOk ? 'ENDRA will recognise you' : 'Add it later in Settings',
+            'safety'
+          )}
+
+          {/* Row 5: Protecting */}
+          {row(
+            'shield',
+            'Protecting',
+            useLabel(onboardingData.use || []).join(', ') || 'Personal safety',
+            undefined,
+            'use'
+          )}
+
+          {/* Row 6: Camera setup */}
+          {row('cam', 'Camera setup', 'Not added', 'You can do this from your dashboard')}
+        </div>
+
+        <div className="note" style={{ marginTop: '16px' }}>
+          <b>What happens next.</b> Once you’re in, ENDRA walks you through adding your place, cameras and notifications at your own pace. You start on the free plan.
+        </div>
+
+        {activationError && (
+          <div className="alert alert-err" style={{ marginTop: '14px', marginBottom: '8px' }}>
+            {activationError}
+          </div>
+        )}
+
+        <div className="onb-actions">
+          <button
+            type="button"
+            className="btn btn-g btn-lg"
+            onClick={handleBack}
+          >
+            Back
+          </button>
+          <span className="sp" />
+          <button
+            type="button"
+            className="btn btn-w btn-lg"
+            id="gFinish"
+            onClick={handleFinish}
+            disabled={isActivating}
+          >
+            {isActivating ? (
+              <>
+                <span className="spinline" />
+                Activating ENDRA
+              </>
+            ) : (
+              'Activate ENDRA'
+            )}
+          </button>
+        </div>
+      </div>
+    </>
   );
 };
