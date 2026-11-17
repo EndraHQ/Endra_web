@@ -1,7 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <rect width="64" height="64" rx="14" fill="#080808"/>
-  <rect x="14" y="16" width="36" height="14" rx="7" fill="#f8f8f8"/>
-  <circle cx="21" cy="23" r="3" fill="#080808"/>
-  <rect x="14" y="34" width="36" height="14" rx="7" fill="#ff3b30"/>
-  <circle cx="21" cy="41" r="3" fill="#080808"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-92 238 640 640" width="100%" height="100%">
+  <!-- Monochromatic deep black background squircle -->
+  <rect x="-92" y="238" width="640" height="640" rx="140" fill="#000000"/>
+  <rect x="-91" y="239" width="638" height="638" rx="139" fill="none" stroke="#222222" stroke-width="2"/>
+  
+  <!-- Official ENDRA Geometric E Symbol (exact geometry from official-endra-logo.svg) -->
+  <path d="M0 301H456V398H70V442H456V539H0Z" fill="#FFFFFF"/>
+  <path d="M0 577H456V674H70V718H456V815H0Z" fill="#FFFFFF"/>
 </svg>
