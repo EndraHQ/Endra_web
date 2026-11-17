@@ -1,4 +1,5 @@
 import { request, formatApiPhone } from '../client';
+import { SOSContactsResponseSchema } from './sos';
 
 export interface CreateEmergencyContactSchema {
   full_name: string;
@@ -27,6 +28,17 @@ export const contactsService = {
    */
   async getEmergencyContacts(userId?: number): Promise<EmergencyContactResponseSchema[]> {
     return request<EmergencyContactResponseSchema[]>('/api/v1/mobile/auth/emergency-contacts', {
+      method: 'GET',
+      userId
+    });
+  },
+
+  /**
+   * Get SOS Emergency Directory & Contacts: GET /api/v1/sos/contacts
+   */
+  async getSosContacts(state = 'Lagos State', userId?: number): Promise<SOSContactsResponseSchema> {
+    const query = new URLSearchParams({ state });
+    return request<SOSContactsResponseSchema>(`/api/v1/sos/contacts?${query.toString()}`, {
       method: 'GET',
       userId
     });

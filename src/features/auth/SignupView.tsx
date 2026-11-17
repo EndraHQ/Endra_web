@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
 import { Icon } from '../../components/icons/Icon';
@@ -26,6 +26,22 @@ export const SignupView: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [generalError, setGeneralError] = useState<string | null>(null);
   const [duplicateAccount, setDuplicateAccount] = useState(false);
+
+  // Synchronize prefill inputs whenever signupData updates (e.g. from mobile-to-web intent)
+  useEffect(() => {
+    if (signupData?.name && !name) setName(signupData.name);
+    if (signupData?.email && !email) setEmail(signupData.email);
+    if (signupData?.phone && !phone) {
+      const digits = normPhone(signupData.phone).slice(0, 10);
+      let formatted = digits;
+      if (digits.length > 6) {
+        formatted = `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`;
+      } else if (digits.length > 3) {
+        formatted = `${digits.slice(0, 3)} ${digits.slice(3)}`;
+      }
+      setPhone(formatted);
+    }
+  }, [signupData]);
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value;

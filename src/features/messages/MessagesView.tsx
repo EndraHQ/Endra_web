@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { Icon } from '../../components/icons/Icon';
-import { hhmm } from '../../utils/formatters';
+import { hhmm, formatMessageTime, formatMessageDateHeader, parseTimestampToMs } from '../../utils/formatters';
 import { api } from '../../services/api';
 
 export const MessagesView: React.FC = () => {
@@ -59,12 +59,15 @@ export const MessagesView: React.FC = () => {
         : activeConv.nm.includes('Response') ? 'Rapid Response Unit 4'
         : 'Estate Control';
 
-      await api.sendMessage({
+      const sendRes = await api.sendMessage({
         sender_id: senderId,
         sender_name: senderName,
         recipient_group: validRecipient,
         content: text
       });
+
+      const messageTimestamp = sendRes?.timestamp || new Date().toISOString();
+      const messageTimeFormatted = formatMessageTime(messageTimestamp);
 
       setThreads(prev => {
         const updated = [...prev];
@@ -74,11 +77,13 @@ export const MessagesView: React.FC = () => {
           {
             f: 'me' as const,
             t: text,
-            tm: hhmm()
+            tm: messageTimeFormatted,
+            timestamp: messageTimestamp
           }
         ];
         conv.last = text;
-        conv.time = 'now';
+        conv.time = messageTimeFormatted;
+        conv.lastActivity = messageTimestamp;
         updated[selectedIdx] = conv;
         return updated;
       });
@@ -139,7 +144,7 @@ export const MessagesView: React.FC = () => {
                   <div className="mn">
                     <div className="nm">
                       <span>{t.nm}</span>
-                      <time>{t.time}</time>
+                      <time>{formatMessageTime(t.time || t.lastActivity)}</time>
                     </div>
                     <div className="rl">{t.role}</div>
                     <div className={`ls ${t.unread > 0 ? 'un' : ''}`}>{t.last}</div>
@@ -174,11 +179,11 @@ export const MessagesView: React.FC = () => {
                   </div>
 
                   <div className="chat-sc" ref={chatScRef}>
-                    <div className="chat-day">Today</div>
+                    <div className="chat-day">{formatMessageDateHeader(activeConv.msgs[0]?.timestamp || activeConv.time || activeConv.lastActivity)}</div>
                     {activeConv.msgs.map((m, idx) => (
                       <div key={idx} className={`bub ${m.f}`}>
                         {m.t}
-                        <small>{m.tm}</small>
+                        <small>{formatMessageTime(m.tm || m.timestamp)}</small>
                       </div>
                     ))}
                   </div>

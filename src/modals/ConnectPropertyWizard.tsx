@@ -1,283 +1,223 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
+import { api } from '../services/api';
 import { useModals } from '../context/ModalContext';
 import { Modal } from '../components/feedback/Modal';
 import { Button } from '../components/common/Button';
 import { Icon } from '../components/icons/Icon';
-import { CPOOL, CROLES } from '../data/estates';
-import { ConnectedPlace, HouseholdMember } from '../types';
+import { HouseholdMember } from '../types';
 import { initials } from '../utils/formatters';
 
 export const ConnectPropertyWizard: React.FC = () => {
-  const { setConnected, toast, go } = useApp();
+  const { setPlaces, setPlace, refreshDashboardData, toast, go } = useApp();
+  const { account } = useAuth();
   const { modal, closeModal } = useModals();
 
   const isOpen = modal.type === 'connectProperty';
 
-  const [search, setSearch] = useState('');
-  const [selectedEstate, setSelectedEstate] = useState<{ id: string; name: string; loc: string } | null>(null);
-  const [role, setRole] = useState<string>('');
-  const [unit, setUnit] = useState<string>('');
-  const [employer, setEmployer] = useState<string>('');
-  const [step, setStep] = useState<number>(1);
-  const [err, setErr] = useState<string>('');
+  // Form state for creating owned property
+  const [propertyName, setPropertyName] = useState('');
+  const [address, setAddress] = useState('');
+  const [propertyType, setPropertyType] = useState<'residential' | 'commercial'>('residential');
+  const [coords, setCoords] = useState<{ lat?: number; lng?: number; accuracy?: number } | null>(null);
+  const [gpsLoading, setGpsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [createErr, setCreateErr] = useState('');
 
   if (!isOpen) return null;
 
   const handleClose = () => {
-    setSearch('');
-    setSelectedEstate(null);
-    setRole('');
-    setUnit('');
-    setEmployer('');
-    setStep(1);
-    setErr('');
+    setPropertyName('');
+    setAddress('');
+    setPropertyType('residential');
+    setCoords(null);
+    setCreateErr('');
     closeModal();
   };
 
-  const handlePickEstate = (estate: { id: string; name: string; loc: string }) => {
-    setSelectedEstate(estate);
-    setStep(2);
-  };
-
-  const handlePickRole = (selectedRole: string) => {
-    setRole(selectedRole);
-    if (selectedRole === 'Visitor') {
-      setStep(4);
-    } else {
-      setStep(3);
-    }
-  };
-
-  const handleNextUnit = () => {
-    if (!unit.trim()) {
-      setErr('Enter the unit number');
+  const handleDetectGPS = () => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      toast('Geolocation is not supported by your browser.');
       return;
     }
-    setErr('');
-    setStep(4);
-  };
-
-  const handleSubmit = () => {
-    if (!selectedEstate) return;
-    const st = role === 'Visitor' ? 'active' : 'pending';
-    const newConn: ConnectedPlace = {
-      id: `${selectedEstate.id}-${Date.now().toString().slice(-4)}`,
-      name: selectedEstate.name,
-      loc: selectedEstate.loc,
-      role: role,
-      property: unit.trim(),
-      status: st as 'active' | 'pending',
-      ig: 'link'
-    };
-
-    setConnected((prev: ConnectedPlace[]) => [...prev, newConn]);
-    handleClose();
-    go('properties');
-    toast(
-      st === 'pending'
-        ? 'Request sent · pending verification'
-        : `Connected to ${selectedEstate.name}`
+    setGpsLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setCoords({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy
+        });
+        setGpsLoading(false);
+        toast(`GPS coordinates captured (±${Math.round(pos.coords.accuracy)}m)`);
+      },
+      (err) => {
+        setGpsLoading(false);
+        let msg = 'Failed to capture GPS coordinates.';
+        if (err.code === 1) msg = 'Location permission denied by browser.';
+        else if (err.code === 2) msg = 'GPS signal unavailable.';
+        else if (err.code === 3) msg = 'Location request timed out.';
+        toast(msg);
+      },
+      { timeout: 8000, enableHighAccuracy: true }
     );
   };
 
-  // Step 1: Search & Pick Estate
-  if (step === 1) {
-    const ql = search.toLowerCase();
-    const list = CPOOL.filter(
-      p => !ql || p.name.toLowerCase().includes(ql) || p.loc.toLowerCase().includes(ql)
-    );
+  const handleCreateProperty = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!propertyName.trim()) {
+      setCreateErr('Please enter a property name.');
+      return;
+    }
+    if (!address.trim()) {
+      setCreateErr('Please enter a full street address.');
+      return;
+    }
 
-    return (
-      <Modal
-        isOpen={isOpen}
-        onClose={handleClose}
-        title="Connect to a property"
-        subtitle="Search for an estate, office, school or church."
-      >
+    const userId = Number(account?.userId || account?.id);
+    if (!userId) {
+      setCreateErr('Authentication required to create a property.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setCreateErr('');
+
+    try {
+      const res = await api.createProperty({
+        property_name: propertyName.trim(),
+        full_address: address.trim(),
+        property_type: propertyType,
+        latitude: coords?.lat,
+        longitude: coords?.lng
+      }, userId);
+
+      const newPlaceId = `prop-${res.id}`;
+      const newPlace = {
+        id: newPlaceId,
+        name: res.property_name,
+        type: res.property_type === 'commercial' ? 'Workplace' : 'Residence',
+        loc: res.full_address,
+        role: 'Owner' as const,
+        ig: res.property_type === 'commercial' ? 'building' : 'home',
+        cams: 0,
+        camsOn: 0,
+        assets: 0,
+        devices: 0,
+        devOn: 0
+      };
+
+      setPlaces(prev => [...prev.filter(p => p.id !== newPlaceId), newPlace]);
+      setPlace(newPlaceId);
+      try {
+        localStorage.setItem('endra_active_place_id', newPlaceId);
+      } catch {}
+
+      handleClose();
+      await refreshDashboardData();
+      toast(`Property "${res.property_name}" created successfully.`);
+      go('properties');
+    } catch (err: any) {
+      console.error('Failed to create property:', err);
+      setCreateErr(err?.message || 'Failed to create property on backend.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={handleClose}
+      title="Add Property"
+      subtitle="Register a residential or commercial property on your ENDRA account."
+    >
+      <form onSubmit={handleCreateProperty}>
         <div className="fld">
+          <label htmlFor="propName">Property Name</label>
           <input
+            id="propName"
             className="in"
-            placeholder="Search properties…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            aria-label="Search properties"
+            placeholder="e.g. Lekki Residence, Victoria Island Office"
+            value={propertyName}
+            onChange={e => setPropertyName(e.target.value)}
+            disabled={isSubmitting}
             autoFocus
           />
         </div>
-        {list.length > 0 ? (
-          list.map(p => (
+
+        <div className="fld">
+          <label htmlFor="propAddress">Full Address</label>
+          <input
+            id="propAddress"
+            className="in"
+            placeholder="e.g. 84 Ozumba Mbadiwe Ave, Victoria Island, Lagos"
+            value={address}
+            onChange={e => setAddress(e.target.value)}
+            disabled={isSubmitting}
+          />
+        </div>
+
+        <div className="fld">
+          <label>Property Type</label>
+          <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
             <button
-              key={p.id}
               type="button"
-              className="optc"
-              onClick={() => handlePickEstate(p)}
+              className={`btn btn-sm ${propertyType === 'residential' ? 'btn-w' : 'btn-g'}`}
+              onClick={() => setPropertyType('residential')}
+              style={{ flex: 1 }}
             >
-              <div className="ico">{initials(p.name)}</div>
-              <div style={{ flex: 1 }}>
-                <div className="t">{p.name}</div>
-                <div className="s">{p.loc}</div>
-              </div>
-              <Icon name="chevr" size={16} />
+              Residential
             </button>
-          ))
-        ) : (
-          <div className="empty">No properties found.</div>
+            <button
+              type="button"
+              className={`btn btn-sm ${propertyType === 'commercial' ? 'btn-w' : 'btn-g'}`}
+              onClick={() => setPropertyType('commercial')}
+              style={{ flex: 1 }}
+            >
+              Commercial
+            </button>
+          </div>
+        </div>
+
+        <div className="fld" style={{ marginTop: '14px' }}>
+          <label>GPS Coordinates (Optional)</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '4px' }}>
+            <button
+              type="button"
+              className="btn btn-g btn-sm"
+              onClick={handleDetectGPS}
+              disabled={gpsLoading || isSubmitting}
+            >
+              <Icon name="pin" size={14} />
+              {gpsLoading ? 'Detecting GPS…' : coords ? 'Re-detect GPS' : 'Capture Current Location'}
+            </button>
+            {coords && (
+              <span style={{ fontSize: '12px', color: 'var(--green)' }}>
+                ✓ {coords.lat?.toFixed(4)}, {coords.lng?.toFixed(4)}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {createErr && (
+          <div style={{ color: 'var(--red)', fontSize: '13px', marginTop: '12px' }}>
+            {createErr}
+          </div>
         )}
-      </Modal>
-    );
-  }
 
-  // Step 2: Pick Role
-  if (step === 2 && selectedEstate) {
-    return (
-      <Modal
-        isOpen={isOpen}
-        onClose={handleClose}
-        onBack={() => setStep(1)}
-        title="Your relationship"
-        subtitle={`What is your relationship with ${selectedEstate.name}?`}
-      >
-        {CROLES.map(r => (
-          <button
-            key={r[0]}
-            type="button"
-            className="optc"
-            onClick={() => handlePickRole(r[0])}
-          >
-            <div className="ico"><Icon name={r[1]} size={20} /></div>
-            <div style={{ flex: 1 }}>
-              <div className="t">{r[0]}</div>
-              <div className="s">{r[2]}</div>
-            </div>
-            <Icon name="chevr" size={16} />
-          </button>
-        ))}
-      </Modal>
-    );
-  }
-
-  // Step 3: Unit and Employer Details
-  if (step === 3 && selectedEstate) {
-    const isWorker = role === 'Worker';
-    return (
-      <Modal
-        isOpen={isOpen}
-        onClose={handleClose}
-        onBack={() => setStep(2)}
-        title={isWorker ? 'Your employer' : 'Property details'}
-        subtitle={isWorker ? 'Which unit do you work for?' : 'Which unit are you claiming?'}
-        footer={
-          <Button variant="white" onClick={handleNextUnit}>
-            Continue
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '24px' }}>
+          <Button variant="ghost" onClick={handleClose} disabled={isSubmitting}>
+            Cancel
           </Button>
-        }
-      >
-        <div className="fld">
-          <label htmlFor="cUnit">
-            {isWorker ? 'House / unit of employer' : 'House / unit number'}
-          </label>
-          <input
-            className="in"
-            id="cUnit"
-            placeholder="e.g. House 21"
-            value={unit}
-            onChange={e => setUnit(e.target.value)}
-            autoFocus
-          />
-          {err && (
-            <span style={{ color: 'var(--red)', fontSize: '12.5px', marginTop: '4px' }}>
-              {err}
-            </span>
-          )}
-        </div>
-
-        {isWorker && (
-          <div className="fld">
-            <label htmlFor="cEmp">Employer name</label>
-            <input
-              className="in"
-              id="cEmp"
-              placeholder="e.g. Mr James"
-              value={employer}
-              onChange={e => setEmployer(e.target.value)}
-            />
-          </div>
-        )}
-
-        <div className="note">
-          {isWorker
-            ? 'Your employer will approve your access.'
-            : role === 'Tenant'
-            ? 'The property owner or manager will approve your tenancy.'
-            : 'The estate will verify that you own this unit.'}
-        </div>
-      </Modal>
-    );
-  }
-
-  // Step 4: Review Request
-  if (step === 4 && selectedEstate) {
-    const ap =
-      role === 'Property Owner'
-        ? 'the estate management'
-        : role === 'Tenant'
-        ? 'the property owner / manager'
-        : role === 'Worker'
-        ? `your employer (${employer || 'resident'})`
-        : role === 'Visitor'
-        ? 'the resident hosting you'
-        : 'the community admin';
-
-    return (
-      <Modal
-        isOpen={isOpen}
-        onClose={handleClose}
-        onBack={() => (role === 'Visitor' ? setStep(2) : setStep(3))}
-        title="Review request"
-        subtitle="Confirm your details before submitting."
-        footer={
-          <Button variant="white" onClick={handleSubmit}>
-            Submit request
+          <Button variant="white" type="submit" disabled={isSubmitting}>
+            {isSubmitting ? 'Creating…' : 'Create Property'}
           </Button>
-        }
-      >
-        <div className="kv">
-          <span>Property</span>
-          <span>{selectedEstate.name}</span>
         </div>
-        <div className="kv">
-          <span>Location</span>
-          <span>{selectedEstate.loc}</span>
-        </div>
-        <div className="kv">
-          <span>Role</span>
-          <span>{role}</span>
-        </div>
-        {unit && (
-          <div className="kv">
-            <span>Unit</span>
-            <span>{unit}</span>
-          </div>
-        )}
-        {employer && (
-          <div className="kv">
-            <span>Employer</span>
-            <span>{employer}</span>
-          </div>
-        )}
-
-        <div className="note sec" style={{ marginTop: '14px' }}>
-          <Icon name="search" size={17} />
-          <span>
-            <b>Needs verification.</b> This request will be sent to {ap} for approval. You get access once approved.
-          </span>
-        </div>
-      </Modal>
-    );
-  }
-
-  return null;
+      </form>
+    </Modal>
+  );
 };
 
 export const AddMemberModal: React.FC = () => {

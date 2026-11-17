@@ -193,3 +193,117 @@ export const INITIAL_CAM_NAMES = [
 
 export const fmtRec = (s: number | string): string => fmtOff(s);
 
+/**
+ * Parses any timestamp input (ISO 8601, Unix seconds, Unix milliseconds,
+ * numeric strings, or relative time descriptions like "2 mins ago") into
+ * epoch milliseconds for robust chronological sorting.
+ * Returns 0 if invalid or unavailable.
+ */
+export function parseTimestampToMs(raw: any): number {
+  if (raw == null) return 0;
+  if (typeof raw === 'number') {
+    return raw < 1e11 ? raw * 1000 : raw;
+  }
+  if (typeof raw !== 'string') return 0;
+  const s = raw.trim();
+  if (!s || s.toLowerCase() === 'time unavailable' || s.toLowerCase() === 'invalid date') return 0;
+
+  // Numeric string (e.g. "1762843200" or "1762843200000")
+  if (/^\d+(\.\d+)?$/.test(s)) {
+    const num = Number(s);
+    return num < 1e11 ? num * 1000 : num;
+  }
+
+  // Relative time expressions: '2 mins ago', '15 mins ago', '1 hour ago', '3 days ago', 'just now'
+  if (/^(just now|now)$/i.test(s)) return Date.now();
+  const rel = /^(\d+)\s*(sec|second|min|minute|hr|hour|day|wk|week|mo|month|yr|year)s?\s*ago$/i.exec(s);
+  if (rel) {
+    const qty = parseInt(rel[1], 10);
+    const unit = rel[2].toLowerCase();
+    const mult =
+      unit.startsWith('sec') ? 1000 :
+      unit.startsWith('min') ? 60 * 1000 :
+      unit.startsWith('hr') ? 3600 * 1000 :
+      unit.startsWith('day') ? 86400 * 1000 :
+      unit.startsWith('wk') ? 7 * 86400 * 1000 :
+      unit.startsWith('mo') ? 30 * 86400 * 1000 :
+      365 * 86400 * 1000;
+    return Date.now() - qty * mult;
+  }
+
+  const parsed = Date.parse(s);
+  return isNaN(parsed) ? 0 : parsed;
+}
+
+/**
+ * Defensive date and time formatter for messaging and chat.
+ * Prevents "Invalid Date" text by checking:
+ * 1. Missing / invalid values -> returns "Time unavailable"
+ * 2. Human relative strings ("2 mins ago", "just now") -> preserves cleanly
+ * 3. ISO 8601 strings and Unix timestamps (seconds / ms) -> formats localized time
+ */
+export function formatMessageTime(raw: any): string {
+  if (raw == null) return 'Time unavailable';
+  if (typeof raw === 'string') {
+    const s = raw.trim();
+    if (!s || s.toLowerCase() === 'invalid date') return 'Time unavailable';
+    if (/^(just now|now|today|yesterday|\d+\s*(sec|second|min|minute|hr|hour|day|wk|week|mo|month|yr|year)s?\s*ago)$/i.test(s)) {
+      return s;
+    }
+  }
+
+  const ms = parseTimestampToMs(raw);
+  if (!ms || ms <= 0) return 'Time unavailable';
+
+  const d = new Date(ms);
+  if (isNaN(d.getTime())) return 'Time unavailable';
+
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  if (isToday) return timeStr;
+
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) {
+    return `Yesterday, ${timeStr}`;
+  }
+
+  const isSameYear = d.getFullYear() === now.getFullYear();
+  const dateStr = d.toLocaleDateString([], {
+    day: 'numeric',
+    month: 'short',
+    ...(isSameYear ? {} : { year: 'numeric' })
+  });
+
+  return `${dateStr}, ${timeStr}`;
+}
+
+/**
+ * Formats a date header separator for chat timelines.
+ */
+export function formatMessageDateHeader(raw: any): string {
+  const ms = parseTimestampToMs(raw);
+  if (!ms || ms <= 0) return 'Recent';
+
+  const d = new Date(ms);
+  if (isNaN(d.getTime())) return 'Recent';
+
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return 'Today';
+
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+
+  const isSameYear = d.getFullYear() === now.getFullYear();
+  return d.toLocaleDateString([], {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'short',
+    ...(isSameYear ? {} : { year: 'numeric' })
+  });
+}
+
+

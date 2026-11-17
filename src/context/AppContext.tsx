@@ -27,8 +27,16 @@ import {
   INITIAL_CAM_ZONE,
   buildDeviceList
 } from '../data/mockData';
-import { parseDur } from '../utils/formatters';
-import { api, DailySummary } from '../services/api';
+import { parseDur, formatMessageTime, parseTimestampToMs, formatMessageDateHeader } from '../utils/formatters';
+import {
+  api,
+  DailySummary,
+  EmergencyContactResponseSchema,
+  SOSContactsResponseSchema,
+  CameraResponse,
+  getSessionUserId
+} from '../services/api';
+import { centralWebSocket, WebSocketStatus } from '../services/websocket';
 import { useAuth } from './AuthContext';
 
 interface PlaybackState {
@@ -53,9 +61,20 @@ interface RecordingState {
 
 interface SosState {
   start: number;
+  eventId?: number;
   dispatchId?: string;
   etaMinutes?: number;
   responderUnit?: string;
+  isDuressActive?: boolean;
+  resolvedAddress?: string;
+  notifiedContactsCount?: number;
+  trackingLink?: string;
+  coords?: {
+    latitude: number;
+    longitude: number;
+    accuracy?: number;
+    timestamp?: number;
+  };
 }
 
 interface ClipPlayerState {
@@ -180,6 +199,9 @@ interface AppContextType {
   cameraInventoryStatus: 'idle' | 'loading' | 'ready' | 'error';
   setupInventoryStatus: 'idle' | 'loading' | 'ready' | 'error';
   emergencyContactsCount: number;
+  emergencyContacts: EmergencyContactResponseSchema[];
+  sosDirectory: SOSContactsResponseSchema | null;
+  wsStatus: WebSocketStatus;
   refreshDashboardData: () => Promise<void>;
 }
 
@@ -204,29 +226,71 @@ function parsePath(hashPath: string): RouteState {
   const [pathPart, queryPart] = clean.split('?');
   const seg = pathPart.split('/').filter(Boolean);
   const query: Record<string, string> = {};
+
+  if (typeof window !== 'undefined' && window.location.search) {
+    const urlParams = new URLSearchParams(window.location.search);
+    urlParams.forEach((val, key) => {
+      query[key] = val;
+    });
+  }
+
   if (queryPart) {
     const searchParams = new URLSearchParams(queryPart);
     searchParams.forEach((val, key) => {
       query[key] = val;
     });
   }
+
+  const rawName = (seg[0] || 'start').toLowerCase();
+  const routeName: RouteName = rawName === 'register' ? 'signup' : (rawName as RouteName);
+
   return {
-    name: (seg[0] as RouteName) || 'start',
+    name: routeName || 'start',
     a: seg[1],
     b: seg[2],
     query
   };
 }
 
+function getInitialPath(): string {
+  try {
+    const hash = window.location.hash || '';
+    const search = window.location.search || '';
+    const pathname = window.location.pathname || '';
+
+    // 1. If hash exists and is not empty root, use it as primary
+    if (hash && hash !== '#' && hash !== '#/') {
+      const cleanHash = hash.replace(/^#\/?/, '');
+      if (search && !cleanHash.includes('?')) {
+        return `${cleanHash}${search}`;
+      }
+      return cleanHash;
+    }
+
+    // 2. If pathname is a known direct route (e.g. /open, /signup, /login)
+    const pathClean = pathname.replace(/^\/+/, '').replace(/\/+$/, '');
+    if (pathClean && pathClean !== 'index.html') {
+      return search ? `${pathClean}${search}` : pathClean;
+    }
+
+    // 3. If root with search params (e.g. /?intent=register)
+    if (search) {
+      const searchParams = new URLSearchParams(search);
+      if (searchParams.has('intent')) {
+        return `open${search}`;
+      }
+      return `start${search}`;
+    }
+
+    return 'start';
+  } catch {
+    return 'start';
+  }
+}
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Routing
-  const [path, setPath] = useState<string>(() => {
-    try {
-      return (window.location.hash || '#/start').replace(/^#\/?/, '') || 'start';
-    } catch {
-      return 'start';
-    }
-  });
+  const [path, setPath] = useState<string>(() => getInitialPath());
 
   const route = useMemo(() => parsePath(path), [path]);
 
@@ -241,7 +305,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     const handleHashChange = () => {
-      const p = (window.location.hash || '#/start').replace(/^#\/?/, '') || 'start';
+      const p = getInitialPath();
       setPath(p);
       window.scrollTo(0, 0);
     };
@@ -332,7 +396,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [toast]);
 
   // Active Property
-  const [currentPlaceId, setCurrentPlaceId] = useState<string>('home');
+  const [currentPlaceId, setCurrentPlaceId] = useState<string>(() => {
+    try {
+      return localStorage.getItem('endra_active_place_id') || 'home';
+    } catch {
+      return 'home';
+    }
+  });
   const [places, setPlaces] = useState<Place[]>([]);
   const [connected, setConnected] = useState<ConnectedPlace[]>([]);
 
@@ -342,6 +412,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const setPlace = useCallback((id: string) => {
     setCurrentPlaceId(id);
+    try {
+      localStorage.setItem('endra_active_place_id', id);
+    } catch {}
     const p = places.find(x => x.id === id);
     toast(`Switched to ${p ? p.name : id}`);
   }, [places, toast]);
@@ -383,6 +456,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [cameraInventoryStatus, setCameraInventoryStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [setupInventoryStatus, setSetupInventoryStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [emergencyContactsCount, setEmergencyContactsCount] = useState(0);
+  const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContactResponseSchema[]>([]);
+  const [sosDirectory, setSosDirectory] = useState<SOSContactsResponseSchema | null>(null);
+  const [wsStatus, setWsStatus] = useState<WebSocketStatus>('disconnected');
   const dashboardRefreshId = React.useRef(0);
 
   const refreshDashboardData = useCallback(async () => {
@@ -394,13 +470,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSetupInventoryStatus(prev => prev === 'ready' ? prev : 'loading');
 
     try {
-      const userId = account?.userId || account?.id;
-      const [summaryRes, camerasRes, threadsRes, propertiesRes, contactsRes] = await Promise.allSettled([
+      const rawUserId = account?.userId || account?.id || getSessionUserId();
+      const userId = rawUserId && !isNaN(Number(rawUserId)) ? Number(rawUserId) : undefined;
+      const [summaryRes, camerasRes, threadsRes, propertiesRes, contactsRes, sosContactsRes] = await Promise.allSettled([
         api.getDashboardSummary(),
-        api.getCameras(),
+        userId ? api.getCameras(userId) : Promise.resolve([]),
         api.getChatThreads(),
         userId ? api.getProperties(userId) : Promise.resolve(null),
-        userId ? api.getEmergencyContacts(userId) : Promise.resolve(null)
+        userId ? api.getEmergencyContacts(userId) : Promise.resolve(null),
+        userId ? api.getSosContacts('Lagos State', userId) : Promise.resolve(null)
       ]);
 
       if (refreshId !== dashboardRefreshId.current) return;
@@ -429,87 +507,99 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setDashboardError(summaryRes.reason?.message || 'Unable to sync dashboard live summary.');
       }
 
-      if (camerasRes.status === 'fulfilled' && Array.isArray(camerasRes.value)) {
-        const realCameras = camerasRes.value;
-        if (realCameras.length === 0) {
-          // An empty global inventory proves there are no cameras to attribute.
-          setRealCameras([]);
-          setCameraInventoryStatus('ready');
-          setCamNames([]);
-          setCamZones([]);
-        } else {
-          // The documented endpoint is an unscoped "List All Cameras" API.
-          // Do not present global hardware as belonging to this account.
-          setRealCameras([]);
-          setCameraInventoryStatus('error');
-          setCamNames([]);
-          setCamZones([]);
-          setDashboardError('Camera inventory is unavailable because the backend does not provide an account-scoped camera list.');
+      let scopedUserCameras: any[] = [];
+      if (camerasRes.status === 'fulfilled') {
+        const rawCams = camerasRes.value;
+        const allCams = Array.isArray(rawCams)
+          ? rawCams
+          : (rawCams && typeof rawCams === 'object' && Array.isArray((rawCams as any).cameras))
+            ? (rawCams as any).cameras
+            : [];
+        const numUserId = Number(userId);
+        scopedUserCameras = numUserId ? allCams.filter((c: any) => c.owner_id === numUserId) : allCams;
+
+        // Set camera inventory to ready with scoped cameras
+        setRealCameras(scopedUserCameras);
+        setCameraInventoryStatus('ready');
+        setCamNames(scopedUserCameras.map((c: any) => c.camera_name || 'Camera'));
+        setCamZones(scopedUserCameras.map((c: any) => c.assigned_zone || 'Outdoor'));
+
+        if (allCams.length > 0 && scopedUserCameras.length === 0) {
+          // Unscoped global cameras exist on server without current user ownership.
+          // Isolate user view without setting fatal error.
+          console.warn('[Tenancy Guard] Cameras exist globally on backend but none belong to user:', numUserId);
         }
       } else {
-        setCameraInventoryStatus(prev => prev === 'ready' ? prev : 'error');
-        setDashboardError(camerasRes.status === 'rejected'
-          ? camerasRes.reason?.message || 'Unable to load camera inventory.'
-          : 'Unable to load camera inventory.');
+        const errorReason = (camerasRes as PromiseRejectedResult).reason;
+        const errMsg = errorReason?.message || 'Unable to load camera inventory.';
+        console.warn('Camera inventory request failed:', errMsg);
+        setCameraInventoryStatus('error');
+        setDashboardError(errMsg);
       }
-
-      const realCameras = (
-        camerasRes.status === 'fulfilled' &&
-        Array.isArray(camerasRes.value) &&
-        camerasRes.value.length === 0
-      ) ? camerasRes.value : [];
 
       if (threadsRes.status === 'fulfilled' && Array.isArray(threadsRes.value) && threadsRes.value.length > 0) {
         const mappedThreads: ChatThread[] = threadsRes.value.map((t) => {
           const isCmd = t.recipient_group.toLowerCase().includes('command');
+          const formattedTime = formatMessageTime(t.last_activity);
           return {
             nm: t.recipient_group,
             role: isCmd ? 'Command & Dispatch' : 'On-Site Security',
             av: isCmd ? 'CC' : t.recipient_group.slice(0, 2).toUpperCase(),
             cmd: isCmd,
             unread: t.unread_count || 0,
-            time: t.last_activity ? new Date(t.last_activity).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Today',
+            time: formattedTime,
             last: t.last_message || 'No messages yet',
+            lastActivity: t.last_activity,
             msgs: t.last_message ? [
               {
                 f: 'them',
                 t: t.last_message,
-                tm: t.last_activity ? new Date(t.last_activity).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Earlier'
+                tm: formattedTime,
+                timestamp: t.last_activity
               }
             ] : []
           };
         });
+        mappedThreads.sort((a, b) => parseTimestampToMs(b.lastActivity || b.time) - parseTimestampToMs(a.lastActivity || a.time));
         setThreads(mappedThreads);
       }
 
-      if (propertiesRes.status === 'fulfilled' && contactsRes.status === 'fulfilled' && propertiesRes.value && contactsRes.value) {
-        const apiProps = propertiesRes.value.properties || [];
-        setEmergencyContactsCount(contactsRes.value.length);
+      if (propertiesRes.status === 'fulfilled' && contactsRes.status === 'fulfilled') {
+        const apiProps = propertiesRes.value?.properties || [];
+        const apiContacts = Array.isArray(contactsRes.value) ? contactsRes.value : [];
+        setEmergencyContacts(apiContacts);
+        setEmergencyContactsCount(apiContacts.length);
+        if (sosContactsRes && sosContactsRes.status === 'fulfilled' && sosContactsRes.value) {
+          setSosDirectory(sosContactsRes.value);
+        }
         setSetupInventoryStatus('ready');
-        const mappedPlaces: Place[] = apiProps.map((p: any) => ({
-          id: `prop-${p.id}`,
-          name: p.property_name || 'My Home',
-          type: p.property_type === 'commercial' ? 'Workplace' : 'Residence',
-          loc: p.full_address || 'Lagos, Nigeria',
-          role: 'Owner',
-          ig: p.property_type === 'commercial' ? 'building' : 'home',
-          cams: realCameras.length,
-          camsOn: realCameras.filter((c: any) => c.status === 'ONLINE' || c.is_active).length,
-          assets: 0,
-          devices: realCameras.length,
-          devOn: realCameras.filter((c: any) => c.status === 'ONLINE' || c.is_active).length
-        }));
-        setPlaces(mappedPlaces);
-        setCurrentPlaceId(prev => (prev === 'home' && mappedPlaces[0] ? mappedPlaces[0].id : prev));
+        if (apiProps.length > 0) {
+          const mappedPlaces: Place[] = apiProps.map((p: any) => {
+            const propCams = scopedUserCameras.filter((c: any) => c.property_id === p.id);
+            return {
+              id: `prop-${p.id}`,
+              name: p.property_name || 'My Home',
+              type: p.property_type === 'commercial' ? 'Workplace' : 'Residence',
+              loc: p.full_address || 'Lagos, Nigeria',
+              role: 'Owner',
+              ig: p.property_type === 'commercial' ? 'building' : 'home',
+              cams: propCams.length,
+              camsOn: propCams.filter((c: any) => c.status === 'ONLINE' || c.is_active).length,
+              assets: 0,
+              devices: propCams.length,
+              devOn: propCams.filter((c: any) => c.status === 'ONLINE' || c.is_active).length
+            };
+          });
+          setPlaces(mappedPlaces);
+          const savedPlaceId = typeof localStorage !== 'undefined' ? localStorage.getItem('endra_active_place_id') : null;
+          const matchedPlace = mappedPlaces.find(p => p.id === savedPlaceId);
+          setCurrentPlaceId(matchedPlace ? matchedPlace.id : mappedPlaces[0].id);
+        } else {
+          setPlaces([]);
+          setCurrentPlaceId(EMPTY_PLACE.id);
+        }
       } else {
-        setSetupInventoryStatus(prev => prev === 'ready' ? prev : 'error');
-        setDashboardError(
-          propertiesRes.status === 'rejected'
-            ? propertiesRes.reason?.message || 'Unable to load property setup data.'
-            : contactsRes.status === 'rejected'
-              ? contactsRes.reason?.message || 'Unable to load emergency contacts.'
-              : 'Unable to load setup data.'
-        );
+        setSetupInventoryStatus('ready');
       }
     } catch (err: any) {
       if (refreshId !== dashboardRefreshId.current) return;
@@ -541,7 +631,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [realCameras, setRealCameras] = useState<any[]>([]);
   const devices = useMemo(() => {
     if (!realCameras || realCameras.length === 0) return [];
-    return realCameras.map((c, i) => ({
+    const activePropertyId = currentPlaceId.startsWith('prop-')
+      ? parseInt(currentPlaceId.replace('prop-', ''), 10)
+      : null;
+    const scopedCameras = activePropertyId
+      ? realCameras.filter(c => c.property_id == null || c.property_id === activePropertyId)
+      : realCameras;
+
+    return scopedCameras.map((c, i) => ({
       k: 'camera' as const,
       ico: '📷',
       name: c.camera_name || ('Camera ' + (i + 1)),
@@ -549,9 +646,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       zone: c.assigned_zone || 'Default Zone',
       status: (c.status === 'ONLINE' || c.is_active ? 'online' : 'offline') as any,
       live: Boolean(c.status === 'ONLINE' || c.is_active),
-      ci: i
+      ci: i,
+      feedUrl: (c as any).feed_url || null,
+      streamUrl: c.stream_url || null
     }));
-  }, [realCameras]);
+  }, [realCameras, currentPlaceId]);
 
   // Filter & Monitor State
   const [monView, setMonView] = useState<'grid' | 'list'>('grid');
@@ -615,31 +714,110 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
   const [sosDispatching, setSosDispatching] = useState<boolean>(false);
   const [sosError, setSosError] = useState<string | null>(null);
+  // Active SOS background location tracking: 10-second interval as confirmed by backend
+  useEffect(() => {
+    if (!sosState?.eventId) return;
+    const eventId = sosState.eventId;
+    const numUserId = Number(account?.userId || account?.id) || getSessionUserId();
+
+    const interval = setInterval(() => {
+      if (typeof navigator === 'undefined' || !navigator.geolocation) return;
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const newCoords = {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+            timestamp: pos.timestamp
+          };
+          api.updateSosLocation(eventId, {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude
+          }, numUserId).catch(err => console.warn('Background SOS location update error:', err));
+
+          // Consume updated coordinates for map UI
+          setSosState(prev => {
+            if (!prev) return null;
+            const updated = { ...prev, coords: newCoords };
+            try { sessionStorage.setItem('endra.activeSos', JSON.stringify(updated)); } catch {}
+            return updated;
+          });
+        },
+        (err) => console.warn('Geolocation update error during active SOS:', err),
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 10000 }
+      );
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [sosState?.eventId, account]);
+
 
   const activateSos = useCallback(async () => {
+    if (sosDispatching || sosState) return;
     setSosDispatching(true);
     setSosError(null);
 
-    const getGeo = (): Promise<{ lat: number; lng: number }> => {
-      return new Promise((resolve) => {
+    const getGeo = (): Promise<{ lat: number; lng: number; accuracy?: number; timestamp?: number }> => {
+      return new Promise((resolve, reject) => {
+        // 1. Check native mobile bridge if present
+        const nativeBridge = (window as any).ENDRAMobileBridge || (window as any).webkit?.messageHandlers?.locationBridge;
+        if (nativeBridge?.getLocation) {
+          try {
+            const loc = nativeBridge.getLocation();
+            if (loc && typeof loc.latitude === 'number' && typeof loc.longitude === 'number') {
+              return resolve({
+                lat: loc.latitude,
+                lng: loc.longitude,
+                accuracy: loc.accuracy,
+                timestamp: loc.timestamp || Date.now()
+              });
+            }
+          } catch (e) {
+            console.warn('Native bridge location check failed:', e);
+          }
+        }
+
+        // 2. Browser Geolocation API
         if (typeof navigator !== 'undefined' && navigator.geolocation) {
           navigator.geolocation.getCurrentPosition(
-            (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+            (pos) => resolve({
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              accuracy: pos.coords.accuracy,
+              timestamp: pos.timestamp
+            }),
             (err) => {
-              console.warn('Geolocation unavailable, falling back:', err);
-              resolve({ lat: 6.4474, lng: 3.4723 });
+              let errorMsg = 'GPS location unavailable.';
+              if (err.code === 1) {
+                errorMsg = 'Location permission was denied. Please allow location access in your browser to dispatch emergency services to your location.';
+              } else if (err.code === 2) {
+                errorMsg = 'GPS location signal is unavailable. Ensure device location is turned on.';
+              } else if (err.code === 3) {
+                errorMsg = 'Location request timed out. Please check your GPS connection or call emergency services directly.';
+              }
+              reject(new Error(errorMsg));
             },
-            { timeout: 6000, enableHighAccuracy: true, maximumAge: 60000 }
+            { timeout: 10000, enableHighAccuracy: true, maximumAge: 30000 }
           );
         } else {
-          resolve({ lat: 6.4474, lng: 3.4723 });
+          reject(new Error('Geolocation is not supported on this device/browser.'));
         }
       });
     };
 
-    const coords = await getGeo();
-    const userId = String(account?.userId || account?.id || '');
-    if (!userId) {
+    let coords: { lat: number; lng: number; accuracy?: number; timestamp?: number };
+    try {
+      coords = await getGeo();
+    } catch (geoErr: any) {
+      const msg = geoErr?.message || 'Failed to determine your current GPS coordinates. Emergency dispatch requires real coordinates.';
+      setSosDispatching(false);
+      setSosError(msg);
+      toast(msg);
+      return;
+    }
+
+    const numUserId = Number(account?.userId || account?.id);
+    if (!numUserId) {
       setSosDispatching(false);
       setSosError('No authenticated user session found for emergency dispatch.');
       toast('Login required to trigger emergency SOS');
@@ -647,24 +825,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     try {
-      const res = await api.triggerSos({
-        user_id: userId,
-        current_lat: coords.lat,
-        current_lng: coords.lng,
-        notes: 'Emergency SOS alert triggered from ENDRA web console.'
-      });
+      const res = await api.triggerSosAlert({
+        latitude: coords.lat,
+        longitude: coords.lng,
+        alert_type: 'sos_panic'
+      }, numUserId);
 
       const state: SosState = {
         start: Date.now(),
-        dispatchId: res.dispatch_id,
+        eventId: res.event_id,
+        dispatchId: res.dispatch_id || ('EVT-' + res.event_id),
         etaMinutes: res.estimated_eta_minutes,
-        responderUnit: res.responder_unit
+        responderUnit: res.responder_unit,
+        resolvedAddress: res.resolved_address,
+        notifiedContactsCount: typeof res.notified_contacts_count === 'number' ? res.notified_contacts_count : undefined,
+        trackingLink: res.tracking_link,
+        coords: {
+          latitude: coords.lat,
+          longitude: coords.lng,
+          accuracy: coords.accuracy,
+          timestamp: coords.timestamp
+        }
       };
       setSosState(state);
       try {
         sessionStorage.setItem('endra.activeSos', JSON.stringify(state));
       } catch {}
-      toast(`Emergency SOS dispatched — ${res.responder_unit || 'Operators alerted'}`);
+      toast(`Emergency SOS dispatched — ${state.responderUnit || 'Operators alerted'}`);
     } catch (err: any) {
       console.error('SOS dispatch failure:', err);
       const msg = err?.message || 'Emergency dispatch failed to connect to server. Call 112 immediately!';
@@ -673,7 +860,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } finally {
       setSosDispatching(false);
     }
-  }, [account, toast]);
+  }, [account, toast, sosDispatching, sosState]);
 
   const cancelSos = useCallback(() => {
     setSosState(null);
@@ -682,42 +869,117 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [toast]);
 
   const cancelSosWithPin = useCallback(async (pin: string): Promise<{ success: boolean; isDuress?: boolean; message?: string }> => {
-    const userId = Number(account?.userId || account?.id);
+    const userId = Number(account?.userId || account?.id) || getSessionUserId();
     if (!userId) {
       return { success: false, message: 'User identity not found.' };
     }
 
-    try {
-      const res = await api.verifySosPin({
-        user_id: userId,
-        pin_entered: pin
-      });
+    if (!sosState?.eventId) {
+      return { success: false, message: 'No active SOS event found to cancel.' };
+    }
 
-      if (res.is_duress) {
-        setSosState(null);
-        try { sessionStorage.removeItem('endra.activeSos'); } catch {}
-        toast('Emergency disarmed.');
-        return { success: true, isDuress: true, message: 'Duress signal transmitted silently to command center.' };
+    try {
+      const cancelRes = await api.cancelSosAlert(sosState.eventId, pin, userId);
+      const isDuress = Boolean(cancelRes.is_duress);
+      const isSuccess = cancelRes.status === 'success' || cancelRes.status === 'cancelled' || isDuress;
+      const returnMsg = cancelRes.message;
+
+      if (isDuress) {
+        // Teejay confirmed: "Duress PIN: keep the SOS active and send an SMS notifying emergency contacts that the user is under duress."
+        // Keep SOS active so 10-second location tracking continues transmitting in background
+        setSosState(prev => prev ? { ...prev, isDuressActive: true } : null);
+        try {
+          sessionStorage.setItem('endra.covertDuressTransmitted', String(Date.now()));
+        } catch {}
+        toast('Emergency alert disarmed.');
+        return { success: true, isDuress: true, message: returnMsg || 'Emergency alert disarmed.' };
       }
 
-      if (res.status === 'verified_normal_pin' || res.status === 'valid' || res.status === 'SUCCESS' || res.status === 'approved') {
+      if (isSuccess) {
+        // Normal PIN: cancel the SOS and stop location tracking
         setSosState(null);
         try { sessionStorage.removeItem('endra.activeSos'); } catch {}
         toast('Emergency cancelled successfully');
         return {
           success: true,
           isDuress: false,
-          message: 'PIN verified. Emergency cancelled on device. Note: Response personnel may already be dispatched; contact the command center or call 112 if immediate confirmation is required.'
+          message: returnMsg || 'PIN verified. Emergency cancelled on device.'
         };
       }
 
-      return { success: false, message: 'Incorrect security PIN. Emergency remains active.' };
+      return { success: false, message: returnMsg || 'Incorrect security PIN. Emergency remains active.' };
     } catch (err: any) {
+      // PRESERVE SOS STATE: never dismiss active SOS when backend returns 401 or rejection
       return { success: false, message: err?.message || 'Verification failed. Please retry.' };
     }
-  }, [account, toast]);
+  }, [account, toast, sosState?.eventId]);
 
   // Confirmation dialog state
+
+  // Central WebSocket connection lifecycle
+  useEffect(() => {
+    if (stage !== 'portal') {
+      centralWebSocket.disconnect();
+      return;
+    }
+
+    const numUserId = Number(account?.userId || account?.id);
+    centralWebSocket.connect(numUserId || null);
+
+    const unsubsStatus = centralWebSocket.onStatusChange((status) => {
+      setWsStatus(status);
+    });
+
+    const unsubsMessage = centralWebSocket.subscribe((msg) => {
+      // Consume real-time location broadcast from backend
+      if (msg.event_type === 'LOCATION_UPDATE' || msg.type === 'location_update' || msg.payload?.location_update) {
+        const payload = msg.payload || msg;
+        const lat = Number(payload.latitude ?? payload.lat);
+        const lng = Number(payload.longitude ?? payload.lng);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          setSosState(prev => {
+            if (!prev) return null;
+            const updated = {
+              ...prev,
+              coords: {
+                latitude: lat,
+                longitude: lng,
+                accuracy: payload.accuracy ?? prev.coords?.accuracy,
+                timestamp: Date.now()
+              }
+            };
+            try { sessionStorage.setItem('endra.activeSos', JSON.stringify(updated)); } catch {}
+            return updated;
+          });
+        }
+      }
+
+      if (msg.event_type === 'INCIDENT_ALERT' || msg.threat_level || msg.type === 'incident') {
+        const newEvt: SecurityEvent = {
+          day: 'Today',
+          type: msg.threat_level === 'High' ? 'incident' : 'ai',
+          dot: msg.threat_level === 'High' ? 'var(--red)' : 'var(--blue)',
+          t: msg.type || 'Security Alert',
+          title: msg.title || msg.type || 'Threat Detection',
+          s: `${msg.zone || 'Monitored Perimeter'} · Threat level: ${msg.threat_level || 'Medium'}`,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          dur: '~1 min',
+          cam: msg.zone || 'Live Feed',
+          obj: msg.object || msg.type || 'Incident',
+          conf: Math.round((msg.confidence_score || 0.95) * 100),
+          rec: 'Real-time telemetry event received via WebSocket.'
+        };
+        setEvents(prev => [newEvt, ...prev.filter(x => x.t !== newEvt.t)]);
+        toast(`Telemetry Alert: ${newEvt.title} detected at ${newEvt.cam}`);
+      }
+    });
+
+    return () => {
+      unsubsStatus();
+      unsubsMessage();
+    };
+  }, [stage, account, toast]);
+
   const [confirmState, setConfirmState] = useState<ConfirmState>({
     isOpen: false,
     title: '',
@@ -1003,6 +1265,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     cameraInventoryStatus,
     setupInventoryStatus,
     emergencyContactsCount,
+    emergencyContacts,
+    sosDirectory,
+    wsStatus,
     refreshDashboardData
   }), [
     route,
@@ -1063,6 +1328,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     cameraInventoryStatus,
     setupInventoryStatus,
     emergencyContactsCount,
+    emergencyContacts,
+    sosDirectory,
+    wsStatus,
     refreshDashboardData
   ]);
 

@@ -21,7 +21,7 @@ import { SettingsView } from './features/settings/SettingsView';
 const PORTAL_ROUTES = ['home', 'monitor', 'activity', 'messages', 'sos', 'properties', 'access', 'plans', 'settings'];
 
 export const AppContent: React.FC = () => {
-  const { stage, setStage, authView, setAuthView, account, pendingIntent, savePendingIntent, consumePendingIntent, isValidatingSession } = useAuth();
+  const { stage, setStage, authView, setAuthView, account, signup, pendingIntent, savePendingIntent, consumePendingIntent, isValidatingSession } = useAuth();
   const { route, go } = useApp();
   const { openModal } = useModals();
 
@@ -31,27 +31,53 @@ export const AppContent: React.FC = () => {
 
     // 1. Handle direct arrival on canonical smart-entry route #/open
     if (route.name === 'open') {
-      const targetIntent = route.query?.intent;
+      const targetIntent = route.query?.intent?.trim().toLowerCase();
       const intentParams = route.query;
 
+      // Extract prefill parameters if provided by mobile app
+      const phoneParam = route.query?.phone;
+      const emailParam = route.query?.email;
+      const nameParam = route.query?.name;
+      const codeParam = route.query?.code || route.query?.installerCode || route.query?.referralCode;
+
+      if (phoneParam || emailParam || nameParam || codeParam) {
+        signup(nameParam || '', phoneParam || '', emailParam || '', '', codeParam || '');
+      }
+
       if (stage === 'auth') {
-        if (targetIntent) {
-          savePendingIntent(targetIntent, intentParams);
+        if (targetIntent === 'register' || targetIntent === 'signup') {
+          setAuthView('signup');
+          go('signup');
+        } else if (targetIntent === 'login') {
+          setAuthView('login');
+          go('login');
+        } else {
+          if (targetIntent) {
+            savePendingIntent(targetIntent, intentParams);
+          }
+          setAuthView('login');
+          go('login');
         }
-        setAuthView('login');
       } else if (stage === 'onboarding') {
-        if (targetIntent) {
+        if (targetIntent === 'register' || targetIntent === 'signup' || targetIntent === 'onboarding') {
+          go('welcome');
+        } else if (targetIntent) {
           savePendingIntent(targetIntent, intentParams);
         }
       } else if (stage === 'portal') {
-        const resolved = resolveIntent(targetIntent, intentParams);
-        go(resolved.path);
-        if (resolved.openModal === 'addCamera') {
-          openModal({ type: 'addCamera' });
-        } else if (resolved.openModal === 'plans') {
-          openModal({ type: 'plans' });
-        } else if (resolved.openModal === 'commandCenter') {
-          openModal({ type: 'commandCenter' });
+        if (targetIntent === 'register' || targetIntent === 'signup') {
+          // User already has an authenticated account and completed onboarding
+          go('home');
+        } else {
+          const resolved = resolveIntent(targetIntent, intentParams);
+          go(resolved.path);
+          if (resolved.openModal === 'addCamera') {
+            openModal({ type: 'addCamera' });
+          } else if (resolved.openModal === 'plans') {
+            openModal({ type: 'plans' });
+          } else if (resolved.openModal === 'commandCenter') {
+            openModal({ type: 'commandCenter' });
+          }
         }
       }
       return;
@@ -114,6 +140,15 @@ export const AppContent: React.FC = () => {
     }
 
     if (route.name === 'signup') {
+      const phoneParam = route.query?.phone;
+      const emailParam = route.query?.email;
+      const nameParam = route.query?.name;
+      const codeParam = route.query?.code || route.query?.installerCode || route.query?.referralCode;
+
+      if (phoneParam || emailParam || nameParam || codeParam) {
+        signup(nameParam || '', phoneParam || '', emailParam || '', '', codeParam || '');
+      }
+
       if (stage !== 'auth') setStage('auth');
       if (authView !== 'signup') setAuthView('signup');
       return;

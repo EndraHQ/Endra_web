@@ -144,16 +144,12 @@ export const DashboardView: React.FC = () => {
     }
   ];
 
-  const setupProgressKnown = cameraInventoryStatus === 'ready' && setupInventoryStatus === 'ready';
-  const pendingSetupItems = setupProgressKnown ? allSetupItems.filter(i => !i.done) : [];
-  const setupProgressPct = setupProgressKnown
-    ? Math.round(((allSetupItems.length - pendingSetupItems.length) / allSetupItems.length) * 100)
-    : 0;
+  const pendingSetupItems = allSetupItems.filter(i => !i.done);
+  const setupProgressPct = Math.round(((allSetupItems.length - pendingSetupItems.length) / allSetupItems.length) * 100);
+  const setupProgressKnown = cameraInventoryStatus !== 'loading' && setupInventoryStatus !== 'loading';
   const setupProgressLabel = setupProgressKnown
     ? `${setupProgressPct}%`
-    : cameraInventoryStatus === 'error' || setupInventoryStatus === 'error'
-      ? 'Unavailable'
-      : 'Syncing';
+    : 'Syncing';
 
   return (
     <div>
@@ -197,17 +193,13 @@ export const DashboardView: React.FC = () => {
         )}
 
         {/* Setup Checklist Card (Complete your ENDRA setup) */}
-        {(!setupProgressKnown || pendingSetupItems.length > 0) && (
+        {pendingSetupItems.length > 0 && (
           <section className="card s12 setupc" aria-label="Complete your ENDRA setup">
             <div className="sec-hd">
               <div>
                 <h2>Complete your ENDRA setup</h2>
                 <p className="sub" style={{ marginTop: '3px' }}>
-                  {setupProgressKnown
-                    ? `${pendingSetupItems.length === 1 ? '1 step left' : `${pendingSetupItems.length} steps left`}. Finish them whenever you’re ready.`
-                    : cameraInventoryStatus === 'error' || setupInventoryStatus === 'error'
-                      ? 'Setup status is unavailable. Retry the sync to check again.'
-                      : 'Checking your confirmed setup status…'}
+                  {`${pendingSetupItems.length === 1 ? '1 step left' : `${pendingSetupItems.length} steps left`}. Finish them whenever you’re ready.`}
                 </p>
               </div>
               <b className="mono" style={{ fontSize: '18px' }}>{setupProgressLabel}</b>

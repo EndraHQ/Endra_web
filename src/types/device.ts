@@ -11,6 +11,8 @@ export interface DeviceItem {
   ci?: number;
   ai?: number;
   extra?: string;
+  feedUrl?: string | null;
+  streamUrl?: string | null;
 }
 
 export interface StatusInfo {

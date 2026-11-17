@@ -18,6 +18,25 @@ export interface ResolvedDestination {
  * Easy to extend with new intents without changing internal web routes.
  */
 export const INTENT_MAP: Record<string, (params?: Record<string, string>) => ResolvedDestination> = {
+  // Mobile intends to register / sign up a new account
+  'register': () => ({
+    path: 'signup'
+  }),
+
+  'signup': () => ({
+    path: 'signup'
+  }),
+
+  // Mobile intends to complete or resume onboarding
+  'onboarding': () => ({
+    path: 'welcome'
+  }),
+
+  // Mobile intends to log into existing account
+  'login': () => ({
+    path: 'login'
+  }),
+
   // Mobile intends to open user account settings (specifically mapped to settings/account per specification)
   'account': () => ({
     path: 'settings/account'

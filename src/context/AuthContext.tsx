@@ -7,7 +7,7 @@ import {
   TYPE_META
 } from '../data/onboardingData';
 import { hashPw, rid, normPhone, pwScore } from '../utils/authHelpers';
-import { api, formatApiPhone, MobileUserResponseSchema } from '../services/api';
+import { api, formatApiPhone, MobileUserResponseSchema, setSessionUserId } from '../services/api';
 import { nativeBridge } from '../services/nativeBridge';
 
 export type AppStage = 'auth' | 'onboarding' | 'portal';
@@ -299,6 +299,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     document.body.setAttribute('data-stage', stage === 'portal' ? 'portal' : stage);
   }, [stage]);
 
+  useEffect(() => {
+    const uid = account?.userId || account?.id;
+    if (uid) {
+      setSessionUserId(uid);
+    }
+  }, [account]);
+
   const savePendingIntent = (intent: string, params?: Record<string, string>) => {
     const item: PendingIntent = { intent, params };
     setPendingIntent(item);
@@ -371,7 +378,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const saveAccountToStore = (acc: UserAccount) => {
     persistAccountToStore(acc);
     accountRef.current = acc;
-    // Keep in-memory account with original non-sanitized data during session if needed
+    const uid = acc.userId || acc.id;
+    if (uid) setSessionUserId(uid);
     setAccount(acc);
   };
 
@@ -380,7 +388,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const code = details && typeof details === 'object'
       ? details.code || details.error_code || details.detail?.code || details.detail?.error_code
       : undefined;
-    return code === 'ACCOUNT_ALREADY_EXISTS';
+    if (code === 'ACCOUNT_ALREADY_EXISTS') return true;
+    const msg = String(error?.message || (typeof details?.detail === 'string' ? details.detail : '')).toLowerCase();
+    return msg.includes('already exists');
   };
 
   const signup = async (
@@ -674,6 +684,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn('Backend logout call failed:', err);
       }
     }
+    setSessionUserId(undefined);
     store.del('endra.activeEmail');
     store.del('endra.session');
     accountRef.current = null;

@@ -35,7 +35,8 @@ export const SettingsView: React.FC = () => {
     setSignedOut,
     openConfirm,
     setAppearance,
-    toast
+    toast,
+    sosDirectory
   } = useApp();
 
   const { account, onboardingData, updateOnboardingData, logout } = useAuth();
@@ -554,6 +555,83 @@ export const SettingsView: React.FC = () => {
               <p className="note" style={{ marginTop: '14px' }}>
                 You can add up to {MAX_CONTACTS} contacts.
               </p>
+
+              {/* Emergency Directory / Hotlines */}
+              {sosDirectory && (
+                <div style={{ marginTop: '32px' }}>
+                  <div className="sec-hd" style={{ marginBottom: '14px' }}>
+                    <div>
+                      <h2 style={{ fontSize: '16px' }}>Official Emergency Directory</h2>
+                      <p className="sub" style={{ marginTop: '2px', fontSize: '13px' }}>
+                        Verified national and state emergency response lines connected to the SOS dispatch system.
+                      </p>
+                    </div>
+                  </div>
+
+                  {sosDirectory.national_emergency && Object.keys(sosDirectory.national_emergency).length > 0 && (
+                    <div style={{ marginBottom: '20px' }}>
+                      <div className="cardhd" style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--g400)', marginBottom: '8px' }}>
+                        National Emergency Numbers
+                      </div>
+                      <div className="card flush list">
+                        {Object.entries(sosDirectory.national_emergency).map(([service, phone]) => (
+                          <div key={service} className="li">
+                            <div className="ico" style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--red)' }}>
+                              <Icon name="phone" size={17} />
+                            </div>
+                            <div className="mn">
+                              <div className="t" style={{ textTransform: 'capitalize' }}>{service.replace(/_/g, ' ')}</div>
+                              <div className="s">{typeof phone === "string" ? phone : (phone as any)?.phone || (phone as any)?.name || ""}</div>
+                            </div>
+                            <a
+                              href={`tel:${typeof phone === "string" ? phone : (phone as any)?.phone || ""}`}
+                              className="btn btn-sm btn-g"
+                              style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}
+                            >
+                              <Icon name="phone" size={14} /> Call
+                            </a>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {sosDirectory.state_emergency && Object.keys(sosDirectory.state_emergency).length > 0 && (
+                    <div>
+                      <div className="cardhd" style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--g400)', marginBottom: '8px' }}>
+                        State Emergency Services
+                      </div>
+                      <div className="card flush list">
+                        {Object.entries(sosDirectory.state_emergency).map(([stateName, services]) => (
+                          <div key={stateName} style={{ padding: '12px 16px', borderBottom: '1px solid var(--g800)' }}>
+                            <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '8px', textTransform: 'capitalize' }}>
+                              {stateName.replace(/_/g, ' ')}
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '8px' }}>
+                              {Object.entries(services).map(([service, phone]) => (
+                                <a
+                                  key={service}
+                                  href={`tel:${typeof phone === "string" ? phone : (phone as any)?.phone || ""}`}
+                                  className="btn btn-sm btn-g"
+                                  style={{
+                                    justifyContent: 'space-between',
+                                    textDecoration: 'none',
+                                    fontSize: '12px',
+                                    padding: '8px 12px'
+                                  }}
+                                >
+                                  <span style={{ textTransform: 'capitalize' }}>{service.replace(/_/g, ' ')}</span>
+                                  <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{typeof phone === "string" ? phone : (phone as any)?.phone || (phone as any)?.name || ""}</span>
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
           )}
 

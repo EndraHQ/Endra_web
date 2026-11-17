@@ -47,6 +47,62 @@ export function formatApiPhone(phone: string): string {
   return '+234' + cleaned.replace(/\D/g, '');
 }
 
+// Active session user ID store for automatic request context propagation
+let activeSessionUserId: number | undefined;
+
+/**
+ * Updates the globally recognized session user ID.
+ * Synchronizes with local storage to survive in-memory refreshes.
+ */
+export function setSessionUserId(id: number | null | undefined): void {
+  activeSessionUserId = (id !== null && id !== undefined && !isNaN(Number(id))) ? Number(id) : undefined;
+  if (typeof window !== 'undefined') {
+    try {
+      if (activeSessionUserId !== undefined) {
+        localStorage.setItem('endra.activeUserId', String(activeSessionUserId));
+      } else {
+        localStorage.removeItem('endra.activeUserId');
+      }
+    } catch {}
+  }
+}
+
+/**
+ * Resolves the authenticated session user ID from memory or local storage.
+ */
+export function getSessionUserId(): number | undefined {
+  if (activeSessionUserId !== undefined) {
+    return activeSessionUserId;
+  }
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem('endra.activeUserId');
+      if (stored && !isNaN(Number(stored))) {
+        activeSessionUserId = Number(stored);
+        return activeSessionUserId;
+      }
+      const sessionKey = localStorage.getItem('endra.session');
+      if (sessionKey) {
+        const rawAccounts = localStorage.getItem('endra.accounts');
+        if (rawAccounts) {
+          const accounts = JSON.parse(rawAccounts);
+          let parsedKey = sessionKey;
+          try {
+            parsedKey = JSON.parse(sessionKey);
+          } catch {}
+          const acc = accounts[parsedKey] || accounts[sessionKey];
+          const uid = acc?.userId || acc?.id;
+          if (uid && !isNaN(Number(uid))) {
+            activeSessionUserId = Number(uid);
+            return activeSessionUserId;
+          }
+        }
+      }
+    } catch {}
+  }
+  return undefined;
+}
+
 /**
  * Standard fetch wrapper with JSON serialization, configurable timeout, and structured error parsing
  */
@@ -58,8 +114,12 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   }
   headers.set('Accept', 'application/json');
 
-  if (options.userId !== undefined && options.userId !== null) {
-    headers.set('X-User-ID', String(options.userId));
+  const effectiveUserId = options.userId !== undefined && options.userId !== null
+    ? options.userId
+    : getSessionUserId();
+
+  if (effectiveUserId !== undefined && effectiveUserId !== null && !isNaN(Number(effectiveUserId))) {
+    headers.set('X-User-ID', String(effectiveUserId));
   }
 
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;

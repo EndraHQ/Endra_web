@@ -2,6 +2,7 @@ export interface ChatMessage {
   f: 'them' | 'me';
   t: string;
   tm: string;
+  timestamp?: string | number;
 }
 
 export interface ChatThread {
@@ -13,4 +14,5 @@ export interface ChatThread {
   time: string;
   last: string;
   msgs: ChatMessage[];
+  lastActivity?: string;
 }

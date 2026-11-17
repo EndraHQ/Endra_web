@@ -6,6 +6,7 @@ import { Modal } from '../components/feedback/Modal';
 import { Button } from '../components/common/Button';
 import { Icon } from '../components/icons/Icon';
 import { api } from '../services/api';
+import { getSessionUserId } from '../services/client';
 
 export const SecurityPinModal: React.FC = () => {
   const { toast } = useApp();
@@ -65,10 +66,13 @@ export const SecurityPinModal: React.FC = () => {
         setErrorMsg(null);
       } else {
         // Stage is 'new' -> submit update
-        const uid = Number(account?.userId || account?.id);
+        const uid = Number(account?.userId || account?.id) || getSessionUserId();
         if (!uid) {
-          toast(`${isDuress ? 'Duress' : 'Access'} PIN updated`);
-          closeModal();
+          setErrorMsg('Authentication session missing. Please sign in again.');
+          toast('Authentication session missing. Please sign in.');
+          setStage('current');
+          setCurrentPin('');
+          setPin('');
           return;
         }
 
@@ -94,21 +98,13 @@ export const SecurityPinModal: React.FC = () => {
         } catch (err: any) {
           const detail = err?.message || 'Failed to update PIN';
           if (detail.toLowerCase().includes('not configured') || detail.toLowerCase().includes('not set up')) {
-            // Setup PINs as initial configuration
-            try {
-              await api.setupPins({
-                user_id: uid,
-                normal_pin: tab === 'access' ? nextPin : currentPin || '1234',
-                duress_pin: tab === 'duress' ? nextPin : '9876'
-              });
-              toast(`${isDuress ? 'Duress' : 'Access'} PIN configured successfully`);
-              closeModal();
-              return;
-            } catch (setupErr: any) {
-              setErrorMsg(setupErr?.message || 'Failed to configure PIN.');
-            }
+            setErrorMsg('PINs are not configured for this account yet. Please complete initial PIN setup.');
+          } else if (isDuress && detail.toLowerCase().includes('incorrect')) {
+            setErrorMsg('Incorrect current Duress PIN.');
+          } else if (!isDuress && detail.toLowerCase().includes('incorrect')) {
+            setErrorMsg('Incorrect current Access PIN.');
           } else {
-            setErrorMsg(isDuress && detail.toLowerCase().includes('incorrect') ? 'Incorrect current Duress PIN.' : detail);
+            setErrorMsg(detail);
           }
           setStage('current');
           setCurrentPin('');

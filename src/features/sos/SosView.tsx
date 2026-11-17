@@ -51,7 +51,7 @@ export const SosView: React.FC = () => {
         setShowPinModal(false);
         setPin('');
         if (res.message) {
-          setCancellationNotice(res.message);
+          setCancellationNotice(res.isDuress ? 'Emergency alert disarmed.' : res.message);
         }
       } else {
         setPinError(res.message || 'Incorrect PIN. Emergency remains active.');
@@ -253,26 +253,64 @@ export const SosView: React.FC = () => {
               </p>
             </div>
 
-            <div className="card" style={{ marginTop: '20px', padding: '6px 20px' }}>
+            <div className="card" style={{ marginTop: '20px', padding: '12px 20px' }}>
               <div className="step">
                 <div className="ico">📡</div>
                 <div>
-                  <b>Operators notified</b>
-                  <span>ENDRA command center alerted {sosState.dispatchId ? `(Ref: ${sosState.dispatchId})` : ''}</span>
+                  <b>Command center alerted</b>
+                  <span>ENDRA 24/7 Command & Dispatch {sosState.dispatchId ? `(Event #${sosState.dispatchId})` : ''}</span>
                 </div>
               </div>
               <div className="step">
                 <div className="ico">📍</div>
                 <div>
-                  <b>Location shared</b>
-                  <span>{currentPlace.name} · {currentPlace.loc || 'Live GPS shared'}</span>
+                  <b>Live location transmitted</b>
+                  <div style={{ fontSize: '13px', marginTop: '2px', color: 'var(--g200)' }}>
+                    {sosState.resolvedAddress || currentPlace.loc || currentPlace.name || 'Precise GPS broadcasted'}
+                  </div>
+                  {sosState.coords && (
+                    <div style={{ fontSize: '12px', color: 'var(--g400)', marginTop: '3px' }}>
+                      Coordinates: {sosState.coords.latitude.toFixed(5)}, {sosState.coords.longitude.toFixed(5)}
+                      {sosState.coords.accuracy ? ` · Accuracy: ±${Math.round(sosState.coords.accuracy)}m` : ''}
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+                    {sosState.coords && (
+                      <a
+                        href={`https://www.google.com/maps?q=${sosState.coords.latitude},${sosState.coords.longitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-sm btn-w"
+                        style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        <Icon name="pin" size={14} /> Open in Google Maps
+                      </a>
+                    )}
+                    {sosState.trackingLink && (
+                      <a
+                        href={sosState.trackingLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-sm btn-w"
+                        style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        <Icon name="mobile" size={14} /> Live Tracking Link
+                      </a>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="step">
                 <div className="ico">👥</div>
                 <div>
-                  <b>Response unit</b>
-                  <span>{sosState.responderUnit ? `${sosState.responderUnit} en route` : 'Emergency contacts notified'}</span>
+                  <b>Emergency contacts</b>
+                  <div style={{ fontSize: '13px', marginTop: '2px', color: 'var(--g200)' }}>
+                    {typeof sosState.notifiedContactsCount === 'number'
+                      ? sosState.notifiedContactsCount > 0
+                        ? `${sosState.notifiedContactsCount} emergency contact${sosState.notifiedContactsCount === 1 ? '' : 's'} notified via SMS`
+                        : '0 emergency contacts registered on account (alerts routed to Command Center)'
+                      : (sosState.responderUnit ? `${sosState.responderUnit} en route` : 'Emergency responders alerted')}
+                  </div>
                 </div>
               </div>
             </div>

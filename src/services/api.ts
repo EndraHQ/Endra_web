@@ -4,7 +4,7 @@
  * while re-exporting all types to guarantee 100% backwards compatibility.
  */
 
-import { request, formatApiPhone, ApiError, API_BASE_URL, DEFAULT_API_BASE_URL, DEFAULT_TIMEOUT_MS, RequestOptions } from './client';
+import { request, formatApiPhone, ApiError, API_BASE_URL, DEFAULT_API_BASE_URL, DEFAULT_TIMEOUT_MS, RequestOptions, setSessionUserId, getSessionUserId } from './client';
 import { authService } from './modules/auth';
 import { pinService } from './modules/pin';
 import { propertyService } from './modules/properties';
@@ -15,7 +15,7 @@ import { subscriptionService } from './modules/subscriptions';
 import { hardwareService } from './modules/hardware';
 
 // Re-export core client primitives
-export { request, formatApiPhone, ApiError, API_BASE_URL, DEFAULT_API_BASE_URL, DEFAULT_TIMEOUT_MS };
+export { request, formatApiPhone, ApiError, API_BASE_URL, DEFAULT_API_BASE_URL, DEFAULT_TIMEOUT_MS, setSessionUserId, getSessionUserId };
 export type { RequestOptions };
 
 // Re-export all schemas and types from domain modules

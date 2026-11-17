@@ -169,6 +169,20 @@ export const FaceIdStep: React.FC = () => {
           <p className="g-hint" style={{ marginTop: '14px' }}>
             This preview doesn’t use your camera. Faces are matched as an encrypted template, and ENDRA does not store photographs.
           </p>
+          <div
+            style={{
+              marginTop: '14px',
+              padding: '10px 14px',
+              borderRadius: '6px',
+              background: 'rgba(255, 255, 255, 0.04)',
+              border: '1px solid var(--g800)',
+              fontSize: '12px',
+              color: 'var(--g400)',
+              lineHeight: 1.4
+            }}
+          >
+            <span style={{ fontWeight: 600, color: 'var(--g200)' }}>Biometric Notice:</span> On-device enrolment preview. Server-side face biometric matching service is in active development on the backend.
+          </div>
         </div>
 
         {/* Action bar */}

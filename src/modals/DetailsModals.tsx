@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import { useModals } from '../context/ModalContext';
 import { Modal } from '../components/feedback/Modal';
 import { Button } from '../components/common/Button';
 import { StatusDot } from '../components/common/Card';
 import { statusInfo } from '../utils/formatters';
+import { api } from '../services/api';
 
 export const RenamePropertyModal: React.FC = () => {
-  const { places, setPlaces, toast } = useApp();
+  const { places, setPlaces, refreshDashboardData, toast } = useApp();
+  const { account } = useAuth();
   const { modal, closeModal } = useModals();
 
   const isOpen = modal.type === 'renameProperty';
@@ -15,20 +18,41 @@ export const RenamePropertyModal: React.FC = () => {
   const place = places.find(p => p.id === placeId);
 
   const [name, setName] = useState(place ? place.name : '');
+  const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
 
   if (!isOpen || !place) return null;
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!name.trim()) {
       setErr('Enter a name');
       return;
     }
-    setPlaces(prev =>
-      prev.map(p => (p.id === placeId ? { ...p, name: name.trim() } : p))
-    );
-    closeModal();
-    toast('Property renamed');
+    const userId = Number(account?.userId || account?.id);
+    if (placeId.startsWith('prop-') && userId) {
+      setSaving(true);
+      setErr('');
+      const numId = Number(placeId.replace('prop-', ''));
+      try {
+        await api.updateProperty(numId, { property_name: name.trim() }, userId);
+        setPlaces(prev =>
+          prev.map(p => (p.id === placeId ? { ...p, name: name.trim() } : p))
+        );
+        closeModal();
+        await refreshDashboardData();
+        toast('Property renamed');
+      } catch (e: any) {
+        setErr(e?.message || 'Failed to update property.');
+      } finally {
+        setSaving(false);
+      }
+    } else {
+      setPlaces(prev =>
+        prev.map(p => (p.id === placeId ? { ...p, name: name.trim() } : p))
+      );
+      closeModal();
+      toast('Property renamed');
+    }
   };
 
   return (
@@ -38,11 +62,11 @@ export const RenamePropertyModal: React.FC = () => {
       title="Rename property"
       footer={
         <>
-          <Button variant="ghost" onClick={closeModal}>
+          <Button variant="ghost" onClick={closeModal} disabled={saving}>
             Cancel
           </Button>
-          <Button variant="white" onClick={handleSave}>
-            Save
+          <Button variant="white" onClick={handleSave} disabled={saving}>
+            {saving ? 'Saving…' : 'Save'}
           </Button>
         </>
       }

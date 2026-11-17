@@ -8,6 +8,7 @@ import { api, UserSubscriptionStatusResponseSchema } from '../../services/api';
 export const PlansView: React.FC = () => {
   const { account, onboardingData, updateOnboardingData } = useAuth();
   const { route, go, toast } = useApp();
+  const userId = Number(account?.userId || account?.id);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
   const [selectedPlanId, setSelectedPlanId] = useState<string>(onboardingData.plan || 'plus');
   const [showDowngradeModal, setShowDowngradeModal] = useState<boolean>(false);
@@ -16,10 +17,51 @@ export const PlansView: React.FC = () => {
   const [, setSubStatus] = useState<UserSubscriptionStatusResponseSchema | null>(null);
   const [paymentLoading, setPaymentLoading] = useState<boolean>(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [verifyingPayment, setVerifyingPayment] = useState<boolean>(false);
+  const [verificationResult, setVerificationResult] = useState<{
+    success: boolean;
+    message: string;
+    details?: any;
+  } | null>(null);
 
-  const userId = Number(account?.userId || account?.id);
-
+  // Check URL query parameters for payment callback reference
   useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const txRef = (route.query?.reference as string) ||
+                  (route.query?.transaction_ref as string) ||
+                  (route.query?.tx_ref as string) ||
+                  (route.query?.squad_ref as string) ||
+                  searchParams.get('reference') ||
+                  searchParams.get('transaction_ref') ||
+                  searchParams.get('tx_ref');
+
+    if (txRef && !verifyingPayment && !verificationResult) {
+      setVerifyingPayment(true);
+      api.verifyPayment(txRef)
+        .then((res: any) => {
+          setVerificationResult({
+            success: true,
+            message: res?.message || 'Payment verified successfully! Your subscription has been activated.',
+            details: res
+          });
+          toast('Payment confirmed! Plan upgraded.');
+          if (userId) {
+            api.getSubscriptionStatus(userId).then(s => setSubStatus(s)).catch(() => {});
+          }
+        })
+        .catch((err: any) => {
+          setVerificationResult({
+            success: false,
+            message: err?.message || `Payment verification failed for reference: ${txRef}. Please contact support.`
+          });
+        })
+        .finally(() => {
+          setVerifyingPayment(false);
+        });
+    }
+  }, [route.query, userId, verifyingPayment, verificationResult, toast]);
+
+    useEffect(() => {
     if (!userId || isNaN(userId)) return;
     api.getSubscriptionStatus(userId)
       .then(res => setSubStatus(res))
@@ -124,6 +166,62 @@ export const PlansView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Payment Verification Status Banners */}
+      {verifyingPayment && (
+        <div
+          className="alert"
+          style={{
+            margin: '0 0 20px',
+            padding: '16px 20px',
+            borderRadius: '8px',
+            background: 'rgba(59, 130, 246, 0.1)',
+            border: '1px solid rgba(59, 130, 246, 0.3)',
+            color: '#60a5fa',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px'
+          }}
+        >
+          <span className="spinline" />
+          <div>
+            <b>Verifying payment transaction…</b>
+            <div style={{ fontSize: '13px', opacity: 0.85 }}>
+              Connecting to payment gateway to confirm your subscription.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {verificationResult && (
+        <div
+          className={`alert ${verificationResult.success ? 'alert-ok' : 'alert-err'}`}
+          style={{
+            margin: '0 0 20px',
+            padding: '16px 20px',
+            borderRadius: '8px',
+            background: verificationResult.success ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+            border: `1px solid ${verificationResult.success ? 'var(--green)' : 'var(--red)'}`,
+            color: verificationResult.success ? 'var(--green)' : 'var(--red)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px'
+          }}
+        >
+          <div>
+            <b>{verificationResult.success ? '✓ Subscription Confirmed' : 'Payment Verification Issue'}</b>
+            <div style={{ fontSize: '13px', marginTop: '2px' }}>{verificationResult.message}</div>
+          </div>
+          <button
+            type="button"
+            className="btn btn-sm btn-g"
+            onClick={() => setVerificationResult(null)}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Current Plan Overview Card */}
       {paymentError && (
