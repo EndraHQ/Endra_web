@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
 import { Logo } from '../../components/icons/Logo';
 import { Icon } from '../../components/icons/Icon';
-import { FeedCanvas } from '../../components/media/FeedCanvas';
+import { DemoFeedCanvas } from '../../components/media/FeedCanvas';
 import { LandingView } from './LandingView';
 import { LoginView } from './LoginView';
 import { SignupView } from './SignupView';
@@ -14,13 +14,6 @@ import { ResetPasswordView } from './ResetPasswordView';
 import { ResetDoneView } from './ResetDoneView';
 
 export const AuthArt: React.FC = () => {
-  const demoDevice = {
-    ci: 2,
-    id: 'Camera 03',
-    name: 'Parking A Camera',
-    status: 'motion' as const
-  };
-
   return (
     <aside className="auth-art" aria-label="About ENDRA">
       <span className="alogo">
@@ -28,7 +21,7 @@ export const AuthArt: React.FC = () => {
       </span>
 
       <div className="art-feed" aria-hidden="true">
-        <FeedCanvas device={demoDevice} useEventDetection={true} />
+        <DemoFeedCanvas />
         <div className="art-chip">
           <span className="ac-ic">
             <Icon name="search" size={16} />

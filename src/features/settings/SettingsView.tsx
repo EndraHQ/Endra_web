@@ -39,7 +39,7 @@ export const SettingsView: React.FC = () => {
     sosDirectory
   } = useApp();
 
-  const { account, onboardingData, updateOnboardingData, logout } = useAuth();
+  const { account, onboardingData, updateOnboardingData, logout, markSetupDone } = useAuth();
   const { openModal } = useModals();
 
   const activeSec = SET_SECS.some(s => s.id === route.a) ? (route.a as string) : 'account';
@@ -110,12 +110,26 @@ export const SettingsView: React.FC = () => {
   // App guide state
   const [appOs, setAppOs] = useState<'ios' | 'android'>('ios');
 
-  const toggleSetting = (k: keyof typeof settings) => {
-    setSettings(prev => {
-      const next = !prev[k];
-      toast(next ? 'Enabled' : 'Disabled');
-      return { ...prev, [k]: next };
-    });
+  const toggleSetting = async (k: keyof typeof settings) => {
+    const next = !settings[k];
+    setSettings(prev => ({ ...prev, [k]: next }));
+    toast(next ? 'Enabled' : 'Disabled');
+
+    // If updating notification settings, persist preference and mark setup checklist complete
+    if (k.startsWith('notif')) {
+      markSetupDone('notifications');
+      const userId = account?.userId || account?.id;
+      if (typeof userId === 'number') {
+        try {
+          await api.updatePermissions({
+            user_id: userId,
+            push_notifications_granted: k === 'notifPush' ? next : Boolean(settings.notifPush)
+          });
+        } catch (err) {
+          console.warn('Failed to sync notification preferences to backend:', err);
+        }
+      }
+    }
   };
 
   const deleteFace = (idx: number) => {

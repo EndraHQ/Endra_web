@@ -398,9 +398,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Active Property
   const [currentPlaceId, setCurrentPlaceId] = useState<string>(() => {
     try {
-      return localStorage.getItem('endra_active_place_id') || 'home';
+      return localStorage.getItem('endra_active_place_id') || EMPTY_PLACE.id;
     } catch {
-      return 'home';
+      return EMPTY_PLACE.id;
     }
   });
   const [places, setPlaces] = useState<Place[]>([]);
@@ -438,7 +438,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }));
 
   useEffect(() => {
-    if (account) {
+    if (!account || stage === 'auth') {
+      // Clear user-scoped state immediately when logged out or returning to auth stage
+      setPlaces([]);
+      setCurrentPlaceId(EMPTY_PLACE.id);
+      setRealCameras([]);
+      setCamNames([]);
+      setCamZones([]);
+      setEvents([]);
+      setThreads([]);
+      setHousehold([]);
+      setGuests([]);
+      setFaceReg([]);
+      setEmergencyContacts([]);
+      setEmergencyContactsCount(0);
+      setSosDirectory(null);
+      setDashboardSummary(null);
+      setDashboardError(null);
+      setCameraInventoryStatus('idle');
+      setSetupInventoryStatus('idle');
+      setUser({
+        name: 'Resident',
+        phone: '',
+        email: '',
+        faceEnrolled: false,
+        faceQuality: 0,
+        faceTemplate: null,
+        govIdVerified: false,
+        govIdType: '',
+        govIdPending: false,
+        plan: 'ENDRA Free'
+      });
+      try {
+        localStorage.removeItem('endra_active_place_id');
+      } catch {}
+    } else {
       setUser(prev => ({
         ...prev,
         name: account.name || prev.name,
@@ -447,7 +481,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         plan: account.ob?.data?.plan === 'plus' ? 'ENDRA Plus' : account.ob?.data?.plan === 'standard' ? 'ENDRA Standard' : 'ENDRA Free'
       }));
     }
-  }, [account]);
+  }, [account, stage]);
 
   // Dashboard Live Data & Status
   const [dashboardSummary, setDashboardSummary] = useState<DailySummary | null>(null);
@@ -516,7 +550,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             ? (rawCams as any).cameras
             : [];
         const numUserId = Number(userId);
-        scopedUserCameras = numUserId ? allCams.filter((c: any) => c.owner_id === numUserId) : allCams;
+        scopedUserCameras = (numUserId && !isNaN(numUserId)) ? allCams.filter((c: any) => c.owner_id === numUserId) : [];
 
         // Set camera inventory to ready with scoped cameras
         setRealCameras(scopedUserCameras);
@@ -564,15 +598,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setThreads(mappedThreads);
       }
 
-      if (propertiesRes.status === 'fulfilled' && contactsRes.status === 'fulfilled') {
+      // Decoupled properties processing: guarantees genuine empty state if no properties exist
+      if (propertiesRes.status === 'fulfilled' && propertiesRes.value) {
         const apiProps = propertiesRes.value?.properties || [];
-        const apiContacts = Array.isArray(contactsRes.value) ? contactsRes.value : [];
-        setEmergencyContacts(apiContacts);
-        setEmergencyContactsCount(apiContacts.length);
-        if (sosContactsRes && sosContactsRes.status === 'fulfilled' && sosContactsRes.value) {
-          setSosDirectory(sosContactsRes.value);
-        }
-        setSetupInventoryStatus('ready');
         if (apiProps.length > 0) {
           const mappedPlaces: Place[] = apiProps.map((p: any) => {
             const propCams = scopedUserCameras.filter((c: any) => c.property_id === p.id);
@@ -597,10 +625,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } else {
           setPlaces([]);
           setCurrentPlaceId(EMPTY_PLACE.id);
+          try { localStorage.removeItem('endra_active_place_id'); } catch {}
         }
       } else {
-        setSetupInventoryStatus('ready');
+        setPlaces([]);
+        setCurrentPlaceId(EMPTY_PLACE.id);
+        try { localStorage.removeItem('endra_active_place_id'); } catch {}
       }
+
+      // Decoupled emergency contacts processing
+      if (contactsRes.status === 'fulfilled' && contactsRes.value) {
+        const apiContacts = Array.isArray(contactsRes.value) ? contactsRes.value : [];
+        setEmergencyContacts(apiContacts);
+        setEmergencyContactsCount(apiContacts.length);
+      } else {
+        setEmergencyContacts([]);
+        setEmergencyContactsCount(0);
+      }
+
+      if (sosContactsRes && sosContactsRes.status === 'fulfilled' && sosContactsRes.value) {
+        setSosDirectory(sosContactsRes.value);
+      } else {
+        setSosDirectory(null);
+      }
+      setSetupInventoryStatus('ready');
     } catch (err: any) {
       if (refreshId !== dashboardRefreshId.current) return;
       console.warn('Dashboard data fetch error:', err);
@@ -630,19 +678,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [realCameras, setRealCameras] = useState<any[]>([]);
   const devices = useMemo(() => {
-    if (!realCameras || realCameras.length === 0) return [];
+    if (!realCameras || realCameras.length === 0 || places.length === 0 || currentPlace.id === EMPTY_PLACE.id) return [];
     const activePropertyId = currentPlaceId.startsWith('prop-')
       ? parseInt(currentPlaceId.replace('prop-', ''), 10)
       : null;
-    const scopedCameras = activePropertyId
-      ? realCameras.filter(c => c.property_id == null || c.property_id === activePropertyId)
-      : realCameras;
+    if (!activePropertyId) return [];
+    const scopedCameras = realCameras.filter(c => c.property_id === activePropertyId);
 
     return scopedCameras.map((c, i) => ({
       k: 'camera' as const,
       ico: '📷',
       name: c.camera_name || ('Camera ' + (i + 1)),
-      id: c.id || ('cam-' + (i + 1)),
+      id: c.id,
       zone: c.assigned_zone || 'Default Zone',
       status: (c.status === 'ONLINE' || c.is_active ? 'online' : 'offline') as any,
       live: Boolean(c.status === 'ONLINE' || c.is_active),
@@ -650,7 +697,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       feedUrl: (c as any).feed_url || null,
       streamUrl: c.stream_url || null
     }));
-  }, [realCameras, currentPlaceId]);
+  }, [realCameras, currentPlaceId, places.length, currentPlace.id]);
 
   // Filter & Monitor State
   const [monView, setMonView] = useState<'grid' | 'list'>('grid');

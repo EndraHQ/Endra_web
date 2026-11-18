@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
 import { Logo } from '../../components/icons/Logo';
 import { Icon } from '../../components/icons/Icon';
-import { FeedCanvas } from '../../components/media/FeedCanvas';
+import { DemoFeedCanvas } from '../../components/media/FeedCanvas';
 import { normPhone, phoneOk } from '../../utils/authHelpers';
 
 export const LandingView: React.FC = () => {
@@ -11,13 +11,6 @@ export const LandingView: React.FC = () => {
   const { effectiveTheme, toggleTheme, toast, go } = useApp();
   const [identifier, setIdentifier] = useState('');
   const [error, setError] = useState<string | null>(null);
-
-  const demoDevice = {
-    ci: 2,
-    id: 'Camera 03',
-    name: 'Parking A Camera',
-    status: 'motion' as const
-  };
 
   const handleStart = (e: React.FormEvent) => {
     e.preventDefault();
@@ -133,7 +126,7 @@ export const LandingView: React.FC = () => {
         {/* Art / Demo Feed */}
         <section className="land-art" aria-hidden="true">
           <div className="art-feed">
-            <FeedCanvas device={demoDevice} useEventDetection={true} />
+            <DemoFeedCanvas />
             <div className="art-chip">
               <span className="ac-ic">
                 <Icon name="search" size={16} />

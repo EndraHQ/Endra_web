@@ -23,7 +23,8 @@ export const DashboardView: React.FC = () => {
     cameraInventoryStatus,
     setupInventoryStatus,
     emergencyContactsCount,
-    refreshDashboardData
+    refreshDashboardData,
+    settings
   } = useApp();
 
   const { account } = useAuth();
@@ -93,8 +94,11 @@ export const DashboardView: React.FC = () => {
 
   const hasCameras = realBackendCamerasCount > 0;
 
-  // Notifications preference is tracked via explicit account configuration
-  const hasNotifications = Boolean(account?.setup?.notifications);
+  // Notifications preference is tracked via explicit account configuration and active settings
+  const hasNotifications = Boolean(
+    account?.setup?.notifications ||
+    (settings && (settings.notifPush || settings.notifIncident))
+  );
 
   interface SetupItem {
     k: 'contacts' | 'place' | 'cameras' | 'notifications';
@@ -382,8 +386,15 @@ export const DashboardView: React.FC = () => {
           </div>
           <div className="camrow">
             {liveCameras.length === 0 ? (
-              <div style={{ padding: '24px', textAlign: 'center', color: 'var(--g400)', width: '100%', fontSize: '13px' }}>
-                No cameras connected yet. Add a camera to view live feeds.
+              <div style={{ padding: '32px 24px', textAlign: 'center', color: 'var(--g400)', width: '100%', fontSize: '13px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                <div>No cameras connected yet. Add a camera to view live feeds.</div>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => openModal({ type: 'addCamera' })}
+                >
+                  <Icon name="plus" size={14} /> Add camera
+                </button>
               </div>
             ) : (
               liveCameras.map(({ d, motion }) => (

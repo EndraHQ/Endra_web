@@ -687,6 +687,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSessionUserId(undefined);
     store.del('endra.activeEmail');
     store.del('endra.session');
+    try {
+      localStorage.removeItem('endra_active_place_id');
+      localStorage.removeItem('endra.activeUserId');
+      sessionStorage.removeItem('endra.activeSos');
+      sessionStorage.removeItem('endra.pendingSignup');
+    } catch {}
     accountRef.current = null;
     setAccount(null);
     setAuthView('start');
@@ -1156,6 +1162,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (allSucceeded) {
         const completedAcc: UserAccount = {
           ...activeAcc,
+          setup: {
+            ...(activeAcc.setup || {}),
+            notifications: true
+          },
           ob: {
             ...activeAcc.ob,
             step: 'ready',

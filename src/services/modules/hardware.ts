@@ -388,9 +388,9 @@ export const hardwareService = {
   /**
    * Start Camera Stream: POST /api/v1/hardware/cameras/{camera_id}/start?rtsp_url=...
    */
-  async startCamera(cameraId: string, rtspUrl: string): Promise<{ message: string }> {
+  async startCamera(cameraId: string, rtspUrl: string): Promise<{ message?: string; status?: string; camera_id?: string }> {
     const query = new URLSearchParams({ rtsp_url: rtspUrl });
-    return request<{ message: string }>(`/api/v1/hardware/cameras/${cameraId}/start?${query.toString()}`, {
+    return request<{ message?: string; status?: string; camera_id?: string }>(`/api/v1/hardware/cameras/${encodeURIComponent(cameraId)}/start?${query.toString()}`, {
       method: 'POST'
     });
   },
@@ -400,7 +400,7 @@ export const hardwareService = {
    */
   async startHikvisionCamera(cameraId: string, userId?: number): Promise<{ status: string; camera_id: string; camera_name?: string; stream_source?: string }> {
     return request<{ status: string; camera_id: string; camera_name?: string; stream_source?: string }>(
-      `/api/v1/hardware/hikvision/cameras/${cameraId}/start`,
+      `/api/v1/hardware/hikvision/cameras/${encodeURIComponent(cameraId)}/start`,
       {
         method: 'POST',
         userId
@@ -409,10 +409,27 @@ export const hardwareService = {
   },
 
   /**
+   * Unified Start Camera Stream:
+   * Uses backend camera UUID as required by Anthony.
+   * If rtsp_url is provided, triggers the live RTSP pipeline;
+   * otherwise uses the database-mapped camera pipeline.
+   */
+  async startStream(cameraId: string, rtspUrl?: string | null): Promise<any> {
+    if (rtspUrl && typeof rtspUrl === 'string' && rtspUrl.trim().length > 0) {
+      try {
+        return await hardwareService.startCamera(cameraId, rtspUrl.trim());
+      } catch (err: any) {
+        return await hardwareService.startHikvisionCamera(cameraId);
+      }
+    }
+    return await hardwareService.startHikvisionCamera(cameraId);
+  },
+
+  /**
    * Stop Camera Stream: POST /api/v1/hardware/cameras/{camera_id}/stop
    */
-  async stopCamera(cameraId: string): Promise<{ message: string }> {
-    return request<{ message: string }>(`/api/v1/hardware/cameras/${cameraId}/stop`, {
+  async stopCamera(cameraId: string): Promise<{ message?: string; status?: string; camera_id?: string }> {
+    return request<{ message?: string; status?: string; camera_id?: string }>(`/api/v1/hardware/cameras/${encodeURIComponent(cameraId)}/stop`, {
       method: 'POST'
     });
   },
@@ -422,7 +439,7 @@ export const hardwareService = {
    */
   async stopHikvisionCamera(cameraId: string, userId?: number): Promise<{ status?: string; message?: string }> {
     return request<{ status?: string; message?: string }>(
-      `/api/v1/hardware/hikvision/cameras/${cameraId}/stop`,
+      `/api/v1/hardware/hikvision/cameras/${encodeURIComponent(cameraId)}/stop`,
       {
         method: 'POST',
         userId
@@ -431,12 +448,24 @@ export const hardwareService = {
   },
 
   /**
+   * Unified Stop Camera Stream:
+   * Uses camera UUID to terminate active backend pipelines.
+   */
+  async stopStream(cameraId: string): Promise<any> {
+    try {
+      return await hardwareService.stopCamera(cameraId);
+    } catch {
+      return await hardwareService.stopHikvisionCamera(cameraId).catch(() => {});
+    }
+  },
+
+  /**
    * Helper to construct the Hikvision MJPEG streaming feed URL:
    * GET /api/v1/hardware/hikvision/cameras/{camera_id}/feed
    */
   getHikvisionCameraFeedUrl(cameraId: string): string {
     const base = API_BASE_URL.replace(/\/+$/, '');
-    return `${base}/api/v1/hardware/hikvision/cameras/${cameraId}/feed`;
+    return `${base}/api/v1/hardware/hikvision/cameras/${encodeURIComponent(cameraId)}/feed`;
   },
 
   /**
@@ -445,7 +474,7 @@ export const hardwareService = {
    */
   getCameraFeedUrl(cameraId: string): string {
     const base = API_BASE_URL.replace(/\/+$/, '');
-    return `${base}/api/v1/hardware/cameras/${cameraId}/feed`;
+    return `${base}/api/v1/hardware/cameras/${encodeURIComponent(cameraId)}/feed`;
   },
 
   /**
